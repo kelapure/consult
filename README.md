@@ -73,8 +73,8 @@ GMAIL_EMAIL=email@gmail.com       # Gmail address
 GOOGLE_API_KEY=AIza-xxx           # Google Gemini API key
 
 # Optional: Platform credentials
-GLG_USERNAME=username
-GLG_PASSWORD=password
+XXX_USERNAME=username
+XXX_PASSWORD=password
 ```
 
 2. **Gmail OAuth** - Download `credentials.json` from Google Cloud Console and place in project root.
