@@ -23,16 +23,16 @@ The system follows the **Claude Agent SDK agentic loop** pattern:
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Agentic Loop: Gather Context → Act → Verify → Repeat   │
+│ Agentic Loop: Gather Context → Act → Verify → Repeat    │
 ├─────────────────────────────────────────────────────────┤
-│ 1. List emails (via MCP tool)                          │
-│ 2. Get profile summary (via MCP tool)                  │
-│ 3. Analyze fit (agent reasoning)                       │
-│ 4. Decide: Accept | Decline                            │
-│ 5. For Accept: Use Computer Use to fill & submit       │
-│ 6. For Decline: Create draft decline email             │
-│ 7. Record decision (via MCP tool)                      │
-│ 8. Generate report (via MCP tool)                      │
+│ 1. List emails (via MCP tool)                           │
+│ 2. Get profile summary (via MCP tool)                   │
+│ 3. Analyze fit (agent reasoning)                        │
+│ 4. Decide: Accept | Decline                             │
+│ 5. For Accept: Use Computer Use to fill & submit        │
+│ 6. For Decline: Create draft decline email              │
+│ 7. Record decision (via MCP tool)                       │
+│ 8. Generate report (via MCP tool)                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
