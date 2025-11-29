@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLG-Like Complex Application Form</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        /* Cookie Banner */
+        #cookie-banner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+        }
+
+        #cookie-banner.hidden {
+            display: none;
+        }
+
+        #cookie-banner p {
+            flex: 1;
+            margin-right: 20px;
+        }
+
+        #accept-cookies {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        #accept-cookies:hover {
+            background: #229954;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-section {
+            margin-bottom: 30px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .form-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-title {
+            color: #34495e;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .required {
+            color: #e74c3c;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="tel"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="tel"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        select {
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 16px;
+            padding-right: 40px;
+        }
+
+        /* Checkbox styling */
+        .checkbox-group {
+            margin-bottom: 15px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: start;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        /* Radio button styling */
+        .radio-group {
+            display: flex;
+            gap: 30px;
+            margin-top: 10px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        /* Submit button */
+        button[type="submit"] {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        button[type="submit"]:hover {
+            background: #2980b9;
+        }
+
+        button[type="submit"]:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        /* Success message */
+        #success-message {
+            display: none;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 20px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+
+        #success-message h2 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .helper-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Cookie Consent Banner -->
+    <div id="cookie-banner">
+        <p>
+            We use cookies to enhance your experience. By continuing to visit this site you agree to our use of cookies.
+        </p>
+        <button id="accept-cookies">Accept All Cookies</button>
+    </div>
+
+    <div class="container">
+        <h1>Expert Network Application</h1>
+        <p class="subtitle">Please complete all required fields to submit your application</p>
+
+        <form id="application-form">
+            <!-- Section 1: Personal Information -->
+            <div class="form-section">
+                <h2 class="section-title">Personal Information</h2>
+
+                <div class="form-group">
+                    <label for="full-name">Full Name <span class="required">*</span></label>
+                    <input type="text" id="full-name" name="full-name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address <span class="required">*</span></label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="phone">Phone Number <span class="required">*</span></label>
+                    <input type="tel" id="phone" name="phone" required>
+                    <div class="helper-text">Format: +1-234-567-8900</div>
+                </div>
+            </div>
+
+            <!-- Section 2: Professional Background -->
+            <div class="form-section">
+                <h2 class="section-title">Professional Background</h2>
+
+                <div class="form-group">
+                    <label for="current-role">Current Role <span class="required">*</span></label>
+                    <select id="current-role" name="current-role" required>
+                        <option value="">-- Select your current role --</option>
+                        <option value="executive">C-Level Executive</option>
+                        <option value="vp">VP / Senior Director</option>
+                        <option value="director">Director</option>
+                        <option value="manager">Manager</option>
+                        <option value="individual">Individual Contributor</option>
+                        <option value="consultant">Independent Consultant</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="industry">Industry <span class="required">*</span></label>
+                    <select id="industry" name="industry" required>
+                        <option value="">-- Select your industry --</option>
+                        <option value="technology">Technology / Software</option>
+                        <option value="finance">Finance / Banking</option>
+                        <option value="healthcare">Healthcare / Pharma</option>
+                        <option value="manufacturing">Manufacturing</option>
+                        <option value="retail">Retail / E-commerce</option>
+                        <option value="consulting">Consulting</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="years-experience">Years of Experience <span class="required">*</span></label>
+                    <select id="years-experience" name="years-experience" required>
+                        <option value="">-- Select years --</option>
+                        <option value="0-2">0-2 years</option>
+                        <option value="3-5">3-5 years</option>
+                        <option value="6-10">6-10 years</option>
+                        <option value="11-15">11-15 years</option>
+                        <option value="16-20">16-20 years</option>
+                        <option value="20+">20+ years</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="expertise">Areas of Expertise <span class="required">*</span></label>
+                    <textarea id="expertise" name="expertise" required placeholder="Describe your key areas of expertise and relevant experience..."></textarea>
+                </div>
+            </div>
+
+            <!-- Section 3: Availability & Preferences -->
+            <div class="form-section">
+                <h2 class="section-title">Availability & Preferences</h2>
+
+                <div class="form-group">
+                    <label>Consultation Format Preferences <span class="required">*</span></label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="format" value="phone">
+                            Phone consultations
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="format" value="video">
+                            Video conferences
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="format" value="in-person">
+                            In-person meetings (when feasible)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Preferred Consultation Duration</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="duration" value="30" checked>
+                            30 minutes
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="duration" value="60">
+                            60 minutes
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="duration" value="90">
+                            90 minutes
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 4: Compliance & Agreements -->
+            <div class="form-section">
+                <h2 class="section-title">Terms & Conditions</h2>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="terms" name="terms" required>
+                        <span>I agree to the <strong>Terms of Service</strong> and <strong>Privacy Policy</strong> <span class="required">*</span></span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="compliance" name="compliance" required>
+                        <span>I confirm that I am not subject to any confidentiality or non-compete agreements that would prevent me from participating <span class="required">*</span></span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="marketing" name="marketing">
+                        <span>I would like to receive updates about new consultation opportunities (optional)</span>
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" id="submit-btn">Submit Application</button>
+
+            <div id="success-message">
+                <h2>✓ Application Submitted Successfully!</h2>
+                <p>Thank you for your application. We will review your profile and contact you if there's a suitable opportunity.</p>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Cookie banner handling
+        const cookieBanner = document.getElementById('cookie-banner');
+        const acceptCookies = document.getElementById('accept-cookies');
+
+        acceptCookies.addEventListener('click', function() {
+            cookieBanner.classList.add('hidden');
+            localStorage.setItem('cookies-accepted', 'true');
+        });
+
+        // Check if cookies already accepted
+        if (localStorage.getItem('cookies-accepted') === 'true') {
+            cookieBanner.classList.add('hidden');
+        }
+
+        // Form submission handling
+        const form = document.getElementById('application-form');
+        const successMessage = document.getElementById('success-message');
+        const submitBtn = document.getElementById('submit-btn');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Check if at least one format checkbox is selected
+            const formatChecked = document.querySelectorAll('input[name="format"]:checked');
+            if (formatChecked.length === 0) {
+                alert('Please select at least one consultation format preference');
+                return;
+            }
+
+            // Check required checkboxes
+            const termsChecked = document.getElementById('terms').checked;
+            const complianceChecked = document.getElementById('compliance').checked;
+
+            if (!termsChecked || !complianceChecked) {
+                alert('Please accept all required terms and conditions');
+                return;
+            }
+
+            // Hide form and show success message
+            form.style.display = 'none';
+            successMessage.style.display = 'block';
+        });
+    </script>
+</body>
+</html>

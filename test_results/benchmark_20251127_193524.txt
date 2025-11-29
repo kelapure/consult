@@ -1,0 +1,32 @@
+Benchmark Results - 2025-11-27 19:35:24
+======================================================================
+
+
+Gemini Benchmark Results
+==================================================
+Total Runs:       3
+Successes:        1
+Failures:         2
+Success Rate:     33.3%
+Avg Actions:      48.0
+Avg Duration:     123.9s
+Median Duration:  39.1s
+Common Errors:    None
+
+
+Claude Benchmark Results
+==================================================
+Total Runs:       3
+Successes:        1
+Failures:         2
+Success Rate:     33.3%
+Avg Actions:      41.0
+Avg Duration:     134.8s
+Median Duration:  37.2s
+Common Errors:    None
+
+Comparison
+==================================================
+Success Rate:  Claude 33.3% vs Gemini 33.3%
+Avg Actions:   Claude 41.0 vs Gemini 48.0
+Avg Duration:  Claude 134.8s vs Gemini 123.9s

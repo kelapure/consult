@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Phase 3 - Multi-Step Wizard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 24px;
+            background: #f5f5f5;
+        }
+
+        .step {
+            display: none;
+            background: #ffffff;
+            border: 1px solid #d4d4d8;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        label {
+            display: block;
+            margin-top: 12px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #cbd5f5;
+            border-radius: 6px;
+            margin-top: 4px;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 10px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .primary {
+            background: #0055d4;
+            color: #ffffff;
+        }
+
+        .secondary {
+            background: #e2e8f0;
+            color: #111827;
+            margin-right: 12px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #step-error {
+            color: #b91c1c;
+            margin-top: 12px;
+            font-weight: 600;
+        }
+
+        #success-message {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 6px;
+            background: #d1fae5;
+            color: #065f46;
+            font-weight: 600;
+        }
+
+        .step-indicator {
+            font-size: 14px;
+            color: #475569;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Expert Network Multi-Step Application</h1>
+    <p id="instructions">
+        Complete all three steps of this application form. Each step has validation rules that must pass
+        before continuing. After completing all steps, click Submit on Step 3 to finish.
+    </p>
+    <div class="step-indicator" id="step-indicator">Step 1 of 3</div>
+    <div id="step-error" class="hidden"></div>
+
+    <form id="multi-step-form">
+        <div id="step-1" class="step active">
+            <h2>Step 1: Personal Details</h2>
+            <label for="full-name">Full Name</label>
+            <input id="full-name" type="text" placeholder="Alex Martinez" />
+
+            <label for="email">Email Address</label>
+            <input id="email" type="email" placeholder="alex.martinez@example.com" />
+
+            <div>
+                <button type="button" class="primary" onclick="nextStep()">Next</button>
+            </div>
+        </div>
+
+        <div id="step-2" class="step">
+            <h2>Step 2: Professional Focus</h2>
+
+            <label for="industry">Primary Industry</label>
+            <select id="industry">
+                <option value="">Select industry...</option>
+                <option value="technology">Technology / Software</option>
+                <option value="finance">Financial Services</option>
+                <option value="healthcare">Healthcare</option>
+            </select>
+
+            <label>Preferred Consultation Format</label>
+            <div>
+                <label><input id="format-phone" type="checkbox" /> Phone</label>
+                <label><input id="format-video" type="checkbox" /> Video</label>
+            </div>
+
+            <label>Availability</label>
+            <div>
+                <label><input type="radio" name="availability" value="48h" /> Within 48 hours</label>
+                <label><input type="radio" name="availability" value="1week" /> Within 1 week</label>
+            </div>
+
+            <div>
+                <button type="button" class="secondary" onclick="prevStep()">Back</button>
+                <button type="button" class="primary" onclick="nextStep()">Next</button>
+            </div>
+        </div>
+
+        <div id="step-3" class="step">
+            <h2>Step 3: Final Details</h2>
+
+            <label for="expertise">Areas of Expertise</label>
+            <textarea id="expertise" rows="4"
+                placeholder="Cloud strategy, enterprise SaaS transformations, GTM leadership."></textarea>
+
+            <label><input id="terms" type="checkbox" /> I agree to the confidentiality and compliance policies</label>
+
+            <div>
+                <button type="button" class="secondary" onclick="prevStep()">Back</button>
+                <button type="submit" class="primary">Submit Application</button>
+            </div>
+        </div>
+    </form>
+
+    <div id="success-message" class="hidden">
+        Application submitted successfully! You completed every step with valid information.
+    </div>
+
+    <script>
+        let currentStep = 1;
+
+        function showStep(step) {
+            const steps = document.querySelectorAll('.step');
+            steps.forEach((element, index) => {
+                element.classList.toggle('active', index === step - 1);
+            });
+            document.getElementById('step-indicator').textContent = `Step ${step} of 3`;
+        }
+
+        function displayError(message) {
+            const error = document.getElementById('step-error');
+            error.textContent = message;
+            error.classList.remove('hidden');
+        }
+
+        function clearError() {
+            const error = document.getElementById('step-error');
+            error.textContent = '';
+            error.classList.add('hidden');
+        }
+
+        function validateStep(step) {
+            clearError();
+            if (step === 1) {
+                const name = document.getElementById('full-name').value.trim();
+                const email = document.getElementById('email').value.trim();
+                if (!name || !email) {
+                    displayError('Please provide both your full name and email before continuing to Step 2.');
+                    return false;
+                }
+            }
+
+            if (step === 2) {
+                const industry = document.getElementById('industry').value;
+                const phone = document.getElementById('format-phone').checked;
+                const video = document.getElementById('format-video').checked;
+                const availability = document.querySelector('input[name="availability"]:checked');
+
+                if (!industry) {
+                    displayError('Select an industry before moving to the final step.');
+                    return false;
+                }
+                if (!phone && !video) {
+                    displayError('Pick at least one consultation format to proceed.');
+                    return false;
+                }
+                if (!availability) {
+                    displayError('Choose an availability window.');
+                    return false;
+                }
+            }
+
+            if (step === 3) {
+                const expertise = document.getElementById('expertise').value.trim();
+                const terms = document.getElementById('terms').checked;
+
+                if (expertise.length < 20) {
+                    displayError('Provide at least two sentences describing your expertise.');
+                    return false;
+                }
+                if (!terms) {
+                    displayError('You must accept the confidentiality policy before submitting.');
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function nextStep() {
+            if (!validateStep(currentStep)) {
+                return;
+            }
+            currentStep = Math.min(3, currentStep + 1);
+            showStep(currentStep);
+        }
+
+        function prevStep() {
+            currentStep = Math.max(1, currentStep - 1);
+            showStep(currentStep);
+            clearError();
+        }
+
+        function submitMultiStep(event) {
+            event.preventDefault();
+            if (!validateStep(3)) {
+                return;
+            }
+            document.getElementById('success-message').classList.remove('hidden');
+            localStorage.setItem('multi-step-status', 'success');
+        }
+
+        document.getElementById('multi-step-form').addEventListener('submit', submitMultiStep);
+
+        window.addEventListener('load', () => {
+            currentStep = 1;
+            showStep(currentStep);
+            clearError();
+            document.getElementById('success-message').classList.add('hidden');
+            localStorage.removeItem('multi-step-status');
+        });
+    </script>
+</body>
+
+</html>
+

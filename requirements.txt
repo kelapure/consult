@@ -1,0 +1,32 @@
+# Core AI & LLM
+anthropic>=0.34.0  # Required for computer-use-2025-01-24 beta
+claude-agent-sdk>=0.1.0
+google-generativeai>=0.8.0  # Legacy Gemini API (for reference)
+google-genai>=1.52.0  # NEW: Gemini Computer Use API
+
+# Browser Automation (required for Claude SDK Computer Use)
+playwright>=1.40.0
+
+# Email & Web
+google-api-python-client>=2.108.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+beautifulsoup4>=4.12.2
+html2text>=2020.1.16
+
+# Data & Storage
+pyyaml>=6.0.2
+
+# Utilities
+python-dotenv>=1.0.0
+loguru>=0.7.2
+pydantic>=2.0.0
+python-dateutil>=2.8.2
+pytz>=2024.1
+tenacity>=8.2.3
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-playwright>=0.4.0

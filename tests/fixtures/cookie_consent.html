@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookie Consent Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        #cookie-banner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #333;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            z-index: 9999;
+        }
+
+        #cookie-banner.hidden {
+            display: none;
+        }
+
+        #cookie-banner button {
+            margin: 0 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+        }
+
+        #accept-cookies {
+            background: #4CAF50;
+            color: white;
+        }
+
+        #reject-cookies {
+            background: #f44336;
+            color: white;
+        }
+
+        #consent-status {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            display: none;
+        }
+
+        #consent-status.accepted {
+            background: #c8e6c9;
+            color: #2e7d32;
+            display: block;
+        }
+
+        #consent-status.rejected {
+            background: #ffcdd2;
+            color: #c62828;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cookie Consent Test Page</h1>
+    <p>This page tests cookie consent banner handling.</p>
+
+    <!-- Cookie Consent Banner -->
+    <div id="cookie-banner">
+        <p>🍪 We use cookies to improve your experience. Do you accept our cookie policy?</p>
+        <button id="accept-cookies">Accept All Cookies</button>
+        <button id="reject-cookies">Reject All</button>
+    </div>
+
+    <!-- Status Display -->
+    <div id="consent-status">
+        <span id="status-message"></span>
+    </div>
+
+    <script>
+        // Cookie consent handling
+        const banner = document.getElementById('cookie-banner');
+        const acceptBtn = document.getElementById('accept-cookies');
+        const rejectBtn = document.getElementById('reject-cookies');
+        const statusDiv = document.getElementById('consent-status');
+        const statusMsg = document.getElementById('status-message');
+
+        // Check if consent was already given
+        const savedConsent = localStorage.getItem('cookie-consent');
+        if (savedConsent) {
+            banner.classList.add('hidden');
+            showStatus(savedConsent);
+        }
+
+        // Accept cookies
+        acceptBtn.addEventListener('click', function() {
+            localStorage.setItem('cookie-consent', 'accepted');
+            banner.classList.add('hidden');
+            showStatus('accepted');
+        });
+
+        // Reject cookies
+        rejectBtn.addEventListener('click', function() {
+            localStorage.setItem('cookie-consent', 'rejected');
+            banner.classList.add('hidden');
+            showStatus('rejected');
+        });
+
+        function showStatus(consent) {
+            statusDiv.className = consent;
+            if (consent === 'accepted') {
+                statusMsg.textContent = '✅ Cookies accepted! You can now use the site.';
+            } else {
+                statusMsg.textContent = '❌ Cookies rejected. Limited functionality available.';
+            }
+        }
+    </script>
+</body>
+</html>

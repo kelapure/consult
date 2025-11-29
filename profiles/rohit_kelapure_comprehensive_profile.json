@@ -1,0 +1,709 @@
+{
+  "personalInfo": {
+    "name": "Rohit Kelapure",
+    "location": "Palo Alto, California, United States",
+    "tagline": "AI Solutions Leader | Building Enterprise Software Factories",
+    "alternativeTaglines": [
+      "AI Executive | Customer Success Leader | Enterprise Transformation Strategist",
+      "Strategic Partnership GTM Leader | GCP & AI/ML Expert"
+    ],
+    "contact": {
+      "email": "kelapure@gmail.com",
+      "phone": "919-724-2524",
+      "address": "3241 Greer Road, Palo Alto 94303"
+    },
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/rohitkelapure",
+      "github": "https://github.com/kelapure",
+      "company": "https://www.8090.ai/",
+      "twitter": "@rkela",
+      "twitterUrl": "https://twitter.com/rkela",
+      "blogs": {
+        "appm11n": "https://appm11n.blogspot.com/",
+        "allthingscloud": "https://alllthingscloud.blogspot.com/",
+        "wasdynacache": "https://wasdynacache.blogspot.com/"
+      },
+      "infoq": "https://www.infoq.com/profile/Rohit-Kelapure/"
+    },
+    "socialMetrics": {
+      "twitterFollowers": 1309,
+      "twitterFollowing": 1307,
+      "twitterJoined": "August 2009",
+      "linkedinConnections": "500+",
+      "linkedinViews": "50K+"
+    }
+  },
+
+  "executiveSummary": {
+    "core": "Founding engineer at 8090.ai pioneering AI-powered Software Factory for enterprise automation. Built SDLC automation platform delivering custom software from PRD to production in 3-6 months. 22+ years of experience bridging engineering (10 years), consulting (4 years), product management (3 years), and cloud sales (5 years, 2019-2024) with proven P&L ownership.",
+    "keyMetrics": [
+      "Built Software Factory delivering 8+ enterprise projects with $500K+ annual subscriptions",
+      "Achieved 85-90% automation rates across healthcare, life sciences, and insurance verticals",
+      "Generated measurable ROI: $2M+ cost savings, 50+ FTE reductions, 20-40% diagnostic improvements",
+      "Scaled Pivotal's modernization practice from $0 to $250M ARR in 3 years",
+      "Generated >$250M revenue at Google Cloud with >300 opportunities in 2023",
+      "Holder of 19 patents in enterprise software and distributed systems"
+    ]
+  },
+
+  "professionalSummary": {
+    "currentRole": "Founding Member at 8090 Solutions Inc.",
+    "focus": "Building purpose-driven, transformative, high-quality software enterprise applications using AI",
+    "yearsOfExperience": {
+      "total": 22,
+      "engineering": 10,
+      "consulting": 4,
+      "productManagement": 3,
+      "sales": 5
+    },
+    "keyHighlights": [
+      "Built Software Factory delivering 8+ enterprise projects with $500K+ annual subscriptions",
+      "Scaled Pivotal Labs modernization practice from $0 to $250M ARR in 3 years",
+      "Generated >$250M revenue impact at Google Cloud with >300 opportunities",
+      "19 patents in enterprise software and distributed systems",
+      "Pioneer of AI-assisted development methodology for enterprise software",
+      "Public advocate for Claude Code as the future of software development"
+    ]
+  },
+
+  "experience": [
+    {
+      "company": "8090 Solutions Inc.",
+      "role": "Founding Member & AI Solutions Lead",
+      "duration": "June 2024 - Present",
+      "durationMonths": 18,
+      "location": "Palo Alto, California",
+      "achievements": [
+        "Built enterprise Software Factory using AI to automate SDLC components (Refinery, Foundry, Planner, Assembler, Validator) enabling PRD-to-production delivery in 3-6 months",
+        "Led customer delivery generating $500K+ annual subscriptions across 8+ enterprise healthcare and life sciences projects",
+        "Delivered AI Clinical Assistant reducing missed diagnoses by 20-40% and cutting nurse prep time by 70%+ for Medicare Advantage provider",
+        "Implemented Document Intelligence system processing 30K+ weekly faxes, saving 50+ FTE and automating 85%+ of orders for DME company",
+        "Created Claim Integrity Engine reducing $2M+ yearly payment integrity fees and enabling hours-based rule deployment for major insurer",
+        "Built Eligibility Automation achieving 90% automation, <20 second verification times, and 80% reduction in follow-ups for home health provider",
+        "Deployed R&D Data Platform providing 100% data traceability and FDA compliance for medical device company",
+        "Established customer success methodology embracing legacy systems integration and predictable software delivery",
+        "Led cross-functional teams delivering measurable ROI through purpose-built enterprise software solutions"
+      ],
+      "metrics": {
+        "subscriptionModel": "$500K+ annual minimums",
+        "projectCount": "8+ enterprise projects",
+        "deliveryTimeline": "3-6 months PRD to production",
+        "fteReduction": "50+ FTE saved (DME project)",
+        "costSavings": "$2M+ yearly fees reduced (insurance)",
+        "automationRates": "85-90% process automation",
+        "diagnosticAccuracy": "20-40% fewer missed diagnoses",
+        "verificationSpeed": "<20 seconds (vs. hours)"
+      },
+      "technologies": ["Software Factory (5-component SDLC automation)", "Healthcare AI Systems", "Document Intelligence", "Legacy System Integration", "Enterprise SaaS Platforms", "Claude Code", "LLMs", "Python", "AI/ML"]
+    },
+    {
+      "company": "Google Cloud",
+      "role": "GTM Leader: Applications & Databases & Gemini",
+      "previousTitle": "Solutions Director, Modern Apps & Databases",
+      "duration": "September 2021 - June 2024",
+      "durationYears": "2 years 10 months",
+      "location": "Palo Alto, California",
+      "achievements": [
+        "Directed Modern Apps & Databases GTM generating >$250M revenue with >300 opportunities, contributing to >30% greenfield wins",
+        "Built GTM team from 0 to 10 senior specialists driving >$100M indirect revenue impact through strategic enterprise partnerships",
+        "Apigee Northam H1 Business Sales Leader responsible for >$50M P&L - leading 20+ sellers - Hunters & Farmers",
+        "Executed Transform ITDM and Dev Days Builder educational events reaching 5K+ developers (162% of target achievement)",
+        "Led early Gemini AI (formerly Duet AI) GTM strategy growing AI/ML Infrastructure Cloud Runtimes GCP Business by 10x and accelerating enterprise adoption by 40%",
+        "Developed enterprise solutions and sales methodologies for App Ecosystem, GKE ($1B+ run rate), and serverless runtimes",
+        "Created comprehensive technical content and customer success programs across >$50M P&L portfolio",
+        "Authored technical sales plays and customer onboarding frameworks driving multi-million dollar enterprise transformations",
+        "Executed Revenue Generating Depth Campaigns & Breadth Play for all sellers focused on Greenfield",
+        "Created successful Customer Acquisition Programs in GCP to identify whitespace and drive application transformation",
+        "Led revenue ramp programs for Select accounts driving >$100M ARR through integrated Apps and DB strategy for Greenfield penetration"
+      ],
+      "metrics": {
+        "revenue": ">$250M",
+        "opportunities": ">300 in 2023",
+        "pipelineGenerated": ">$100M",
+        "indirectRevenueImpact": ">$100M",
+        "pipelineAchievement": "162% of goal",
+        "sellerCount": "20+",
+        "newLogos": ">30%",
+        "developersReached": "5K+",
+        "geminiAdoptionIncrease": "40%",
+        "aimlInfrastructureGrowth": "10x",
+        "gkeRunRate": "$1B+",
+        "plPortfolio": ">$50M"
+      },
+      "previousRole": {
+        "title": "Application Modernization Scale Solution Specialist",
+        "duration": "September 2020 - December 2021",
+        "achievements": [
+          "Led creation of Apigee GTM strategy for 2022",
+          "Created NorthAm sales GTM plan responsible for $1B+ revenue FY 2022",
+          "Launched App Modernization GTM presenting to ~3K sellers",
+          "Developed first ever GKE growth plan now with $1B run rate"
+        ]
+      }
+    },
+    {
+      "company": "VMware",
+      "role": "Principal Solution Architect",
+      "duration": "January 2020 - September 2020",
+      "durationMonths": 9,
+      "location": "Greater Boston Area",
+      "achievements": [
+        "Built multi-million dollar consulting practice for developer productivity",
+        "Led 4-6 week immersive Labs upskilling Fortune 500 engineers",
+        "Accelerated cloud migration through tool development",
+        "Automated app replatforming and modernization projects"
+      ]
+    },
+    {
+      "company": "Pivotal Software, Inc.",
+      "role": "Principal Engineer & Practice Lead",
+      "previousTitle": "Advisory Solutions Architect",
+      "duration": "April 2018 - December 2019",
+      "fullDuration": "August 2014 - January 2020",
+      "durationYears": "5 years 6 months",
+      "location": "Greater Boston Area",
+      "achievements": [
+        "Founding member scaling application modernization practice from $0 to $250M ARR in 3 years through innovative delivery methodologies",
+        "Led 50+ solution architects across training, developer education, and customer delivery generating Wall Street Journal coverage",
+        "Architected enterprise transformations for major financial institutions implementing microservices at scale (50K+ developers impacted)",
+        "Authored first Spring Framework reference architecture on Cloud Foundry, now industry standard for Java modernization",
+        "Technical evangelist: SpringOne Platform, JavaOne, IBM Impact speaker (10K+ attendees reached)",
+        "Developed '360-Degree Health Assessment' methodology for microservices monitoring and observability",
+        "Led immersive 4-6 week Labs upskilling Fortune 500 engineering teams, accelerating cloud-native adoption by 300%",
+        "16 blog posts on https://cloud.rohitkelapure.com in 2019",
+        "Implemented Cloud Foundry at major online brokerage",
+        "Drove technical, organizational, and cultural transformation"
+      ],
+      "metrics": {
+        "practiceGrowth": "$0 to $250M ARR",
+        "timeframe": "3 years",
+        "teamSize": "50+ people",
+        "developersImpacted": "50K+",
+        "attendeesReached": "10K+",
+        "cloudNativeAdoptionAcceleration": "300%",
+        "mediaRecognition": "Wall Street Journal"
+      }
+    },
+    {
+      "company": "IBM",
+      "role": "Advisory Software Engineer",
+      "duration": "July 2008 - August 2014",
+      "fullDuration": "July 2003 - August 2014",
+      "totalDuration": "11 years 2 months",
+      "location": "Raleigh, NC",
+      "achievements": [
+        "Architected WebSphere Liberty buildpack for Cloud Foundry using Ruby, major open source contribution",
+        "Led Java EE Feature Team implementing CDI specification for WebSphere V8.0 serving Fortune 100 enterprises",
+        "Innovation leader: Authored 19 patents in distributed caching, VM monitoring, code analysis, and performance optimization",
+        "Received 2 Outstanding Technical Achievement Awards for SPECjEnterprise world records and customer impact",
+        "Team Lead for Dynacache/DRS distributed systems, mentoring engineers and developing Channel Framework architecture",
+        "Contributed 30K+ lines of production Java code delivering 50% performance improvements in caching",
+        "Research collaboration: Co-authored 9 NSF grant proposals securing $1M+ funding for Virginia Tech"
+      ],
+      "metrics": {
+        "codeContribution": "30K+ lines",
+        "patents": "19 total (10 granted)",
+        "awards": "2 Outstanding Technical Achievement Awards",
+        "customerReach": "thousands of enterprise customers",
+        "grantFunding": "$1M+ secured"
+      },
+      "previousRoles": [
+        {
+          "title": "Senior Software Engineer",
+          "duration": "October 2012 - August 2014",
+          "achievements": [
+            "Developed WebSphere Java & Liberty runtime buildpack for Bluemix",
+            "Contributed to Cloud Foundry project in Ruby",
+            "Consulted on WebSphere Liberty cloud strategy"
+          ]
+        },
+        {
+          "title": "Staff Software Engineer",
+          "duration": "July 2003 - July 2008",
+          "achievements": [
+            "Team Lead & Architect for Dynacache/DRS team",
+            "Developed Channel Framework and Core Group Bridge",
+            "Mentored team members and automated testing"
+          ]
+        }
+      ]
+    }
+  ],
+
+  "patents": {
+    "total": 19,
+    "granted": 10,
+    "applications": 9,
+    "categories": [
+      "Distributed caching",
+      "VM monitoring",
+      "Code analysis",
+      "Performance optimization",
+      "Enterprise software"
+    ],
+    "highlights": [
+      {
+        "id": "US-8200812-B2",
+        "title": "Reducing workload on a backend system using client side request throttling",
+        "status": "Granted",
+        "date": "2012-06-12"
+      },
+      {
+        "id": "US-10042772-B2",
+        "title": "Dynamic structural management of a distributed caching infrastructure",
+        "status": "Granted",
+        "date": "2018-08-07"
+      },
+      {
+        "id": "US-9003239-B2",
+        "title": "Monitoring and resolving deadlocks, contention, runaway CPU and other virtual machine production issues",
+        "status": "Granted",
+        "date": "2015-04-07"
+      },
+      {
+        "id": "US-9262134-B2",
+        "title": "Analysis of source code changes",
+        "status": "Granted",
+        "date": "2016-02-16"
+      },
+      {
+        "id": "US-8296523-B2",
+        "title": "Dual timeout caching",
+        "status": "Granted",
+        "date": "2012-10-23"
+      }
+    ],
+    "notable": [
+      "Method and Apparatus for Monitoring Runtime of Applications Running on VM",
+      "Distributed Caching for Processing Requests",
+      "Detecting and Correcting Alphabet Soup Patterns in Serialized Dependency Graphs",
+      "Adaptor Component for Facilitating Conversion Between Asynchronous and Synchronous Calling Code",
+      "Method and apparatus for dynamically generating end-user navigable table of contents on existing web content"
+    ]
+  },
+
+  "aiExpertise": {
+    "publicAdvocacy": [
+      "Leading voice in enterprise AI adoption and software factory automation",
+      "Pioneering multi-model LLM architectures for production systems",
+      "Building AI-powered software factories at 8090.ai",
+      "Claude Code is the ANSWER - all other wrappers will disappear",
+      "Boris, I want to work for you (direct message to Anthropic leadership)"
+    ],
+    "aiAssistedDevelopment": {
+      "definition": "Innovative methodology for AI-assisted software development",
+      "keyPrinciples": [
+        "20% planning, 80% coding ratio for optimal productivity",
+        "Methodical Planning: Structured checkpoints and validation",
+        "Multi-Model Collaboration: Leveraging multiple LLMs for code review and generation",
+        "Advanced prompt engineering: Context-aware instruction optimization",
+        "'Try Ultra Hard' and 'Do Something Different' prompt manipulation techniques"
+      ],
+      "linkedinPost": "https://www.linkedin.com/posts/rohitkelapure_claudeai-claudecode-llmdevelopment-activity-7352268130057900034-s0_C",
+      "linkedinEngagement": "50K+ views on AI/ML posts"
+    },
+    "legacyModernization": {
+      "approach": "AI agents for large-scale refactoring and transformation",
+      "results": "30-50% time savings",
+      "bestPractices": [
+        "Docker Containerization for safety",
+        "Start with Low-Risk, High-Impact Tasks",
+        "Use Git as Safety Mechanism",
+        "Develop Precise Specifications",
+        "Multi-model validation and testing"
+      ],
+      "linkedinPost": "https://www.linkedin.com/posts/rohitkelapure_softwareengineering-ai-developerproductivity-activity-7357096001817497600-zKQr"
+    },
+    "implementations": [
+      "Built 5-component Software Factory: Refinery (PRD creation), Foundry (engineering plans), Planner (work orders), Assembler (code deployment), Validator (specification verification)",
+      "AI Clinical Assistant: Real-time transcription, diagnosis recommendations, EMR integration for Medicare Advantage",
+      "Document Intelligence: Automated fax processing (30K+ weekly) with 85%+ order automation for DME",
+      "Healthcare workflow automation: Eligibility verification, referral processing, claim integrity engines",
+      "Life sciences automation: Literature curation, regulatory document creation, genetic surveillance platforms"
+    ],
+    "expertise": {
+      "implementation": "Pioneering SDLC automation through AI-powered Software Factory delivering PRD-to-production in 3-6 months",
+      "methodology": "Developed enterprise automation achieving 85-90% process automation with measurable ROI",
+      "productivity": "50+ FTE reductions, $2M+ cost savings, 20-40% diagnostic accuracy improvements",
+      "advocacy": "Thought leader in purpose-built software vs. Software Industrial Complex",
+      "realWorldApplication": "Deployed production systems across healthcare, life sciences, and insurance verticals",
+      "contracts": "$500K+ annual subscriptions across 8+ enterprise projects"
+    }
+  },
+
+  "education": [
+    {
+      "degree": "MS Computer Science",
+      "institution": "Virginia Polytechnic Institute and State University",
+      "location": "Virginia",
+      "years": "2001-2003",
+      "advisor": "Dr. Edward Fox",
+      "achievements": [
+        "Research Assistant for Open Archives Initiative",
+        "Grant Proposal Writer - Co-authored 9 NSF proposals",
+        "Secured $1M in funding for Virginia Tech",
+        "CS5604 Information Storage and Retrieval projects"
+      ],
+      "research": [
+        "Scenario/Class Diagram Synthesis (American South 2)",
+        "Generation of a User Interface Prototype from an Integrated Scenario Specification"
+      ]
+    },
+    {
+      "degree": "Bachelor of Computer Engineering (B.E.)",
+      "institution": "University of Mumbai",
+      "location": "Mumbai, India",
+      "years": "1997-2001",
+      "details": "First Division with Distinction",
+      "achievements": [
+        "Graduated top of class in 2001",
+        "First Division with Distinction"
+      ]
+    },
+    {
+      "school": "Bhavans A H WADIA HIGH SCHOOL",
+      "degree": "Secondary School Certificate",
+      "years": "1987-1995"
+    }
+  ],
+
+  "skills": {
+    "aiAndML": {
+      "llmArchitectureDeployment": 5,
+      "aiAgentOrchestration": 5,
+      "multiModelAISystems": 5,
+      "enterpriseLLMImplementation": 5,
+      "gpt4AndOpenAIModels": 5,
+      "claudeAndAnthropicModels": 5,
+      "enterprisePromptEngineering": 4,
+      "langChain": 4,
+      "aiAssistedDevelopment": 4,
+      "browserAutomation": 4,
+      "voiceAI": 3,
+      "ocr": 3
+    },
+    "technical": [
+      "Python",
+      "Java",
+      "Ruby",
+      "JavaScript",
+      "Cloud Platforms",
+      "Kubernetes (CKA)",
+      "Docker",
+      "Microservices",
+      "API Management",
+      "DevOps",
+      "Spring Framework",
+      "Cloud Foundry",
+      "Serverless"
+    ],
+    "management": [
+      "Team Building (0-50 people)",
+      "P&L Management ($50M+)",
+      "GTM Strategy",
+      "Revenue Growth",
+      "Executive Communication",
+      "Transformation Leadership"
+    ],
+    "cloud": [
+      "Google Cloud Platform",
+      "AWS",
+      "Cloud Foundry",
+      "Application Modernization",
+      "Container Orchestration"
+    ],
+    "gtm": [
+      "Solution Selling",
+      "Partner Ecosystem",
+      "Demand Generation",
+      "Technical Evangelism",
+      "7 Types of GTM (Inbound, Outbound, Product, Channel, Event, Community, Partners)"
+    ],
+    "leadership": [
+      "AI/ML Leadership",
+      "Enterprise GTM",
+      "Digital Native Expertise",
+      "Solution Architecture",
+      "Cloud Transformation"
+    ]
+  },
+
+  "certifications": [
+    {
+      "name": "Certified Kubernetes Administrator (CKA)",
+      "issuer": "Cloud Native Computing Foundation",
+      "id": "CKA-1900-004157-0100",
+      "validity": "Nov 2019 - Nov 2022"
+    },
+    {
+      "name": "Certified Kubernetes Application Developer (CKAD)",
+      "issuer": "Cloud Native Computing Foundation"
+    },
+    {
+      "name": "Google Cloud Professional Cloud Architect (GCP PCA)",
+      "issuer": "Google Cloud"
+    },
+    {
+      "name": "Google Cloud Professional Cloud Developer (GCP PCD)",
+      "issuer": "Google Cloud"
+    },
+    {
+      "name": "GTM Advocate",
+      "issuer": "Google Cloud"
+    },
+    {
+      "name": "AI Ambassador",
+      "issuer": "Google Cloud"
+    },
+    {
+      "name": "IBM Certified System Administrator",
+      "issuer": "IBM",
+      "year": "2011"
+    },
+    {
+      "name": "Certified Java Programmer",
+      "details": "Java 2 Platform 1.4 with 90% score",
+      "year": "2004"
+    },
+    {
+      "name": "Apache Software Foundation Committer (ASF Committer)",
+      "issuer": "Apache Software Foundation"
+    }
+  ],
+
+  "awardsAndHonors": [
+    {
+      "award": "Outstanding Technical Achievement Award",
+      "organization": "IBM",
+      "year": "2011",
+      "details": "Significant Business and Client Impact on Critical Customer Facing Activities"
+    },
+    {
+      "award": "Outstanding Technical Achievement Award",
+      "organization": "IBM",
+      "year": "2013",
+      "details": "Performance improvements achieving three consecutive world record SPECjEnterprise 2010"
+    },
+    {
+      "award": "Pivotal Barcelona Achievement Club",
+      "organization": "Pivotal",
+      "year": "2016",
+      "details": "Excellence in sales and delivery of Application Modernization services"
+    }
+  ],
+
+  "thoughtLeadership": {
+    "recentAIThoughtLeadership": [
+      "Design Patterns for AI Agent Browser Automation",
+      "By 2026, AI will generate 90% of source code",
+      "Enterprise AI adoption strategies and best practices",
+      "Multi-model LLM architectures for production systems",
+      "AI model inference costs keep going down",
+      "Evaluation of AI tools like Sourcegraph's amp code"
+    ],
+    "publications": {
+      "book": "Pragmatic Microservices",
+      "articles": [
+        "The Idea to Code Continuum with Large Language Models",
+        "Document Understanding LLM Techniques for Maximum Accuracy and Efficiency",
+        "AI: A Powerful Tool, Not a Silver Bullet"
+      ],
+      "blogs": [
+        "appm11n.blogspot.com - Application Modernization",
+        "alllthingscloud.blogspot.com - Cloud Architecture",
+        "wasdynacache.blogspot.com - Performance & Caching"
+      ],
+      "posts": "50+ technical blog posts on AI/ML, cloud, and modernization"
+    },
+    "blogs": {
+      "total": "50+ posts across multiple platforms",
+      "highlights": [
+        "16 posts on cloud.rohitkelapure.com in 2019",
+        "Application modernization strategies",
+        "Cloud computing best practices",
+        "Enterprise AI/LLM implementation and automation",
+        "AI-assisted development methodologies",
+        "WebSphere and enterprise Java"
+      ]
+    },
+    "linkedinActivity": {
+      "views": "50K+",
+      "topics": "Enterprise AI/ML, LLM implementation, software automation",
+      "frequency": "Regular posts on AI development and enterprise transformation",
+      "internalDocs": "Leading to total of 50K+ views at Google"
+    },
+    "speaking": [
+      "SpringOne Platform (Speaker)",
+      "JavaOne (Presenter)",
+      "IBM Impact (Speaker)",
+      "No Fluff Just Stuff (Speaker)",
+      "ÜberConf (Speaker)",
+      "Various enterprise conferences"
+    ],
+    "youtube": [
+      {
+        "title": "360-Degree Health Assessment of Microservices on Pivotal Platform",
+        "event": "SpringOne Platform 2019",
+        "url": "https://youtu.be/Xm9zU-eGhyo"
+      }
+    ],
+    "linkedinReach": "50,000+ views on posts and articles"
+  },
+
+  "strategicImpact": [
+    {
+      "achievement": "Software Factory Innovation at 8090.ai",
+      "impact": "Built AI-powered SDLC automation delivering $500K+ annual subscriptions across 8+ enterprise projects with 85-90% process automation"
+    },
+    {
+      "achievement": "Healthcare AI Transformation",
+      "impact": "Delivered measurable outcomes: 50+ FTE saved, $2M+ cost reductions, 20-40% diagnostic improvements, 90% eligibility automation"
+    },
+    {
+      "achievement": "Google Cloud GTM Leadership",
+      "impact": ">$250M revenue with >300 opportunities; 162% of pipeline target; 10x AI/ML infrastructure growth"
+    },
+    {
+      "achievement": "Pivotal Practice Creation",
+      "impact": "$0 to $250M ARR in 3 years; 50K+ developers impacted; Wall Street Journal coverage"
+    }
+  ],
+
+  "leadershipMetrics": {
+    "teamScale": "0→50+",
+    "pnlResponsibility": "$250M+",
+    "revenueGrowth": "$10M→$250M",
+    "pipelineGenerated": "$500M+",
+    "pipelineAchievement": "162% of target",
+    "enterpriseClients": "100+",
+    "customersEnabled": "5K+",
+    "aiProductivityGains": "30-50%"
+  },
+
+  "gtmExpertise": {
+    "approaches": [
+      "Inbound",
+      "Outbound",
+      "Product",
+      "Channel",
+      "Event",
+      "Community",
+      "Partners",
+      "Direct Sales"
+    ],
+    "strengths": [
+      "10x strength is bias for action",
+      "Executive communication",
+      "Driving business outcomes",
+      "Comprehensively drives all aspects of GTM from Top of funnel with BDRs to bottom of funnel revenue consumption",
+      "Leads GTM Teams and Growth Initiatives under aggressive timelines"
+    ],
+    "specialFocus": {
+      "greenfield": "Created an integrated Apps and DB strategy to Break into Greenfield accounts for GCP",
+      "revenueRamp": "Led revenue ramp programs for Select accounts to drive >$100M ARR",
+      "aimlInfrastructure": "Leading Northam Duet AI & Growing the AI/ML Infrastructure Cloud Runtimes GCP Business by 10x",
+      "sales": "Responsible for creation and execution of campaigns & sales plays & solutions engineering assets"
+    },
+    "communities": [
+      "Customer Engineering Community",
+      "Greenfield & Spender Seller Community"
+    ]
+  },
+
+  "careerProgression": {
+    "phases": [
+      {
+        "phase": "Engineering Foundation",
+        "years": "2003-2014",
+        "company": "IBM",
+        "focus": "Deep technical expertise, open source contributions, 19 patents"
+      },
+      {
+        "phase": "Technical Leadership",
+        "years": "2014-2020",
+        "company": "Pivotal",
+        "focus": "Practice building, enterprise transformation, thought leadership"
+      },
+      {
+        "phase": "Business Leadership",
+        "years": "2020-2024",
+        "company": "Google Cloud",
+        "focus": "GTM strategy, P&L ownership, revenue generation"
+      },
+      {
+        "phase": "AI Innovation",
+        "years": "2024-Present",
+        "company": "8090.ai",
+        "focus": "Claude implementation, AI software factories, enterprise AI solutions"
+      }
+    ]
+  },
+
+  "revenueImpact": {
+    "8090": {
+      "subscriptions": "$500K+ annual minimums across 8+ projects",
+      "costSavings": "$2M+ yearly fees reduced for customers",
+      "efficiency": "50+ FTE reductions, 85-90% automation rates",
+      "focus": "Software Factory for SDLC automation",
+      "verticals": ["Healthcare", "Life Sciences", "Insurance", "Medical Devices"]
+    },
+    "google": {
+      "direct": ">$250M revenue with >300 opportunities",
+      "pipeline": ">$100M pipeline generated",
+      "achievement": "162% of goal",
+      "teamImpact": ">$100M indirect impact through team",
+      "pl": ">$50M P&L responsibility"
+    },
+    "pivotal": {
+      "growth": "$0 to $250M ARR in 3 years",
+      "role": "Founding member of practice"
+    }
+  },
+
+  "uniqueValueProposition": {
+    "differentiators": [
+      "Deep hands-on Claude implementation experience with proven enterprise results",
+      "Proven enterprise GTM and revenue generation across multiple companies",
+      "Bridge between technical excellence and business outcomes",
+      "Established thought leader in AI development methodologies",
+      "Track record of building and scaling high-performing teams (0-50+ people)",
+      "Direct experience with digital native business models and SaaS",
+      "One of few professionals combining Claude expertise with enterprise GTM",
+      "Pioneer of AI-assisted development methodology",
+      "19 patents showing innovation capability",
+      "Proven at startups (8090) and large companies (Google, IBM)",
+      "Direct experience with AI transformation in healthcare/pharma"
+    ],
+    "forAnthropic": [
+      "Deep Claude Code expertise",
+      "Proven ability to build and scale technical teams",
+      "Digital native customer experience (SaaS, tech companies)",
+      "Revenue generation track record",
+      "Bridge between technical depth and business impact",
+      "Published thought leader on AI implementation"
+    ]
+  },
+
+  "additionalContext": {
+    "yearsOfExperience": {
+      "total": 22,
+      "engineering": 10,
+      "consulting": 4,
+      "productManagement": 3,
+      "sales": 5
+    },
+    "googleCloudSellers": "Approximately 3000 in organization",
+    "averageContractSize": "$10M",
+    "focusVerticals": [
+      "Healthcare",
+      "Pharmaceutical",
+      "Life Sciences",
+      "Insurance",
+      "Enterprise Software"
+    ],
+    "workStyle": {
+      "whatsappIntro": "I am a software engineer by training who has about 22 years of experience in 1. engineering 2. technical consulting 3. GTM and 4. Product Management. My areas of expertise are application modernization, Cloud and Applied AI. Recently I was a founding member of my startup 8090.ai where I lead Customer Projects. Companies I have worked in the past include IBM, Pivotal Labs (acquired by VMWare), Google and now 8090. I lead customer projects in Pharma and Healthcare",
+      "twitterIntro": "Boris, I want to work for you. I am an engineer, a founding member of http://8090.ai, and a huge fan of @claudeai claude code. We are building a software factory using claude code (8090.ai). Increasingly, I am convinced Claude code is the ANSWER and all other wrappers will disappear."
+    }
+  }
+}

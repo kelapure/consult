@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+*.pickle
+token.pickle
+credentials.json
+
+# Logs and reports
+logs/
+reports/
+*.log
+
+# Cache and temporary files
+.form_cache/
+*.cache
+.cache/
+tmp/
+temp/
+
+# Screenshots
+screenshots/
+*.png
+*.jpg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application specific
+processed_emails.json
+memory_store*.json
+.profile_cache.json
+manual_review_*.json
+
+# Node (if not using)
+node_modules/
+package-lock.json
+
+# Test files
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

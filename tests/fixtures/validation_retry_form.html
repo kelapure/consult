@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Phase 3 - Validation Retry</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 24px;
+            background: #f8fafc;
+        }
+
+        form {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+        }
+
+        label {
+            display: block;
+            margin-top: 14px;
+            font-weight: 600;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #cbd5f5;
+            margin-top: 6px;
+        }
+
+        button {
+            margin-top: 16px;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .primary {
+            background: #0055d4;
+            color: #ffffff;
+        }
+
+        #error-message {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            background: #fee2e2;
+            color: #991b1b;
+            display: none;
+            font-weight: 600;
+        }
+
+        #success-message {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            background: #dcfce7;
+            color: #166534;
+            display: none;
+            font-weight: 600;
+        }
+
+        #acknowledge-container {
+            margin-top: 12px;
+            display: none;
+            background: #eff6ff;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px dashed #60a5fa;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Expert Network Validation Flow</h1>
+    <p>
+        Fill out the profile summary and submit. This form intentionally triggers a validation error the first time you
+        click Submit. Read the error message, follow the instructions, then submit again to complete the application.
+    </p>
+
+    <form id="validation-form">
+        <label for="profile-name">Profile Name</label>
+        <input id="profile-name" type="text" placeholder="Jordan Patel" />
+
+        <label for="profile-summary">Brief Summary</label>
+        <textarea id="profile-summary" rows="4"
+            placeholder="20 years in capital markets, specializing in fintech partnerships."></textarea>
+
+        <button type="submit" class="primary">Submit Profile</button>
+
+        <div id="error-message"></div>
+        <div id="acknowledge-container">
+            <p id="acknowledge-note">
+                Validation requires acknowledgement of compliance. Click the button below to confirm you reviewed the
+                compliance note, then submit again.
+            </p>
+            <button type="button" id="acknowledge-button" class="primary" style="background:#0ea5e9;">
+                Acknowledge validation
+            </button>
+        </div>
+        <div id="success-message">
+            Profile submitted successfully after acknowledging the validation requirement!
+        </div>
+    </form>
+
+    <script>
+        let validationAcknowledged = false;
+
+        function showError(message) {
+            const error = document.getElementById('error-message');
+            error.textContent = message;
+            error.style.display = 'block';
+            document.getElementById('acknowledge-container').style.display = 'block';
+        }
+
+        function showSuccess() {
+            document.getElementById('success-message').style.display = 'block';
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('acknowledge-container').style.display = 'none';
+        }
+
+        function handleSubmit(event) {
+            event.preventDefault();
+            const name = document.getElementById('profile-name').value.trim();
+            const summary = document.getElementById('profile-summary').value.trim();
+
+            if (!name || !summary) {
+                showError('Complete both fields before submitting.');
+                return;
+            }
+
+            if (!validationAcknowledged) {
+                showError('Validation error: Compliance acknowledgement required. Click the button below, then submit again.');
+                localStorage.setItem('validation-status', 'error');
+                return;
+            }
+
+            showSuccess();
+            localStorage.setItem('validation-status', 'success');
+        }
+
+        function acknowledgeValidation() {
+            validationAcknowledged = true;
+            const button = document.getElementById('acknowledge-button');
+            button.textContent = 'Validation acknowledged';
+            button.disabled = true;
+            document.getElementById('acknowledge-note').textContent = 'Compliance confirmed. Submit again to finish.';
+        }
+
+        document.getElementById('validation-form').addEventListener('submit', handleSubmit);
+        document.getElementById('acknowledge-button').addEventListener('click', acknowledgeValidation);
+
+        window.addEventListener('load', () => {
+            validationAcknowledged = false;
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('acknowledge-container').style.display = 'none';
+            document.getElementById('success-message').style.display = 'none';
+            localStorage.removeItem('validation-status');
+        });
+    </script>
+</body>
+
+</html>
+
