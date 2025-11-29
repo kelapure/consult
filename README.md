@@ -4,7 +4,7 @@ Automated consultation management system powered by Claude Agent SDK. The agent 
 
 ## Features
 
-- **Email Monitoring**: Scans Gmail for consultation opportunities from platforms like GLG, AlphaSights, Guidepoint
+- **Email Monitoring**: Scans Gmail for consultation opportunities from platforms like 
 - **AI-Powered Evaluation**: Uses Claude to analyze fit based on your profile, skills, and preferences
 - **Automated Applications**: Fills and submits application forms via Computer Use (Gemini + Claude)
 - **Smart Decline Drafts**: Creates polite decline emails for low-fit opportunities
