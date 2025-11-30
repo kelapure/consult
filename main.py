@@ -37,7 +37,7 @@ async def main():
     parser.add_argument('--view-runs', type=int, metavar='COUNT', help='View last N runs (default: 10)')
     parser.add_argument('--headless', action='store_true', help='Run browser in headless mode (no UI)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (save screenshots, verbose logging)')
-    parser.add_argument('--platform', type=str, choices=['glg', 'guidepoint', 'coleman'], help='Focus on a specific platform (glg, guidepoint, or coleman)')
+    parser.add_argument('--platform', type=str, choices=['glg', 'guidepoint', 'coleman', 'office_hours'], help='Focus on a specific platform (glg, guidepoint, coleman, or office_hours)')
     args = parser.parse_args()
 
     # Configure environment based on flags

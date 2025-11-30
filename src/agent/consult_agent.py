@@ -272,11 +272,30 @@ Workflow integrity requirements:
     - any concerns or missing information
   - Always persist this information using the provided tools rather than keeping it only in your own reasoning.
 
+**PLATFORM AUTHENTICATION TYPES:**
+Some platforms use different authentication methods:
+
+1. **Credential-based platforms** (GLG, Guidepoint, Coleman):
+   - Require username/password from get_platform_login_info
+   - Login via form fields on the platform
+
+2. **Google OAuth platforms** (Office Hours):
+   - Use Google "Sign in with Google" button
+   - username/password from get_platform_login_info will be NULL - this is expected!
+   - Proceed with just the dashboard_url - the browser profile has the Google session saved
+   - The AI will click "Sign in with Google" to authenticate
+   - DO NOT skip these platforms just because credentials are null
+
+When get_platform_login_info returns null credentials but has a valid dashboard_url,
+check if it's a Google OAuth platform (e.g., office_hours) and proceed anyway.
+
 Loop behavior for a run:
 1. First, gather context:
    a. Call get_profile_summary to understand my background and expertise.
    b. Call get_cp_writing_style to understand communication principles.
    c. Call get_platform_login_info to get login_url, dashboard_url, and credentials.
+      - If credentials are null but dashboard_url exists, check if it's a Google OAuth platform.
+      - For Google OAuth platforms, proceed with just the dashboard_url.
 
 2. Choose ONE of these approaches based on the user's request:
 
@@ -873,8 +892,20 @@ Project URL: {project_url}
 After filling all fields, submit the form and complete ALL follow-up steps.
 Verify you see a success/confirmation message before finishing.
 """
-    
+
     return task
+
+
+def _get_platform_auth_type(platform_name: str) -> str:
+    """
+    Determine the authentication type for a platform.
+
+    Returns:
+        "google_oauth" for platforms using Google OAuth (e.g., office_hours)
+        "credentials" for platforms requiring username/password
+    """
+    google_oauth_platforms = ["office_hours"]
+    return "google_oauth" if platform_name.lower() in google_oauth_platforms else "credentials"
 
 
 @handle_tool_errors
@@ -1196,8 +1227,42 @@ async def run_consult_agent(days_back: int, platform_filter: str = None) -> Dict
     async with ClaudeSDKClient(options=options) as client:
         # Kick off the run. The agent will call tools as needed.
         if platform_filter:
-            # Use single-invitation mode with Gemini Computer Use
-            query = f"""Process {platform_filter.upper()} consultation opportunities:
+            # Check if this is a Google OAuth platform
+            auth_type = _get_platform_auth_type(platform_filter)
+
+            if auth_type == "google_oauth":
+                # Google OAuth platforms (e.g., Office Hours) - no credentials needed
+                query = f"""Process {platform_filter.upper()} opportunities using Google OAuth:
+
+1. Call get_platform_login_info to get dashboard_url
+   - NOTE: This platform uses Google OAuth, so username/password will be null - that's expected!
+   - You only need the dashboard_url to proceed.
+2. Call get_profile_summary to understand evaluation criteria
+3. Call get_cp_writing_style to understand writing principles
+4. Call submit_platform_application with:
+   - project_url: the dashboard_url from step 1
+   - platform_name: "{platform_filter}"
+   - form_data: empty dict (the task prompt will guide the AI)
+   - login_username: null (Google OAuth - no credentials needed)
+   - login_password: null (Google OAuth - no credentials needed)
+
+IMPORTANT: This platform uses Google OAuth for authentication:
+- The browser profile already has the Google session saved
+- The AI will click "Sign in with Google" button to authenticate
+- NO username/password is required - proceed even if credentials are null
+
+The AI will:
+- Navigate to dashboard_url
+- Click "Sign in with Google" to authenticate
+- Complete available surveys using CP writing style
+- Submit responses
+
+5. Record the decision using record_consultation_decision
+6. Call finalize_run_and_report
+"""
+            else:
+                # Standard credential-based platforms (GLG, Guidepoint, Coleman)
+                query = f"""Process {platform_filter.upper()} consultation opportunities:
 
 1. Call get_platform_login_info to get dashboard_url and credentials
 2. Call get_profile_summary to understand evaluation criteria
@@ -1221,7 +1286,7 @@ This will use Gemini Computer Use to:
 5. Record the decision using record_consultation_decision
 6. Call finalize_run_and_report
 """
-            logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {platform_filter.upper()} single invitation processing")
+            logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {platform_filter.upper()} ({auth_type}) processing")
         else:
             query = f"Process consultation emails from the last {days_back} days."
             logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {days_back} days")

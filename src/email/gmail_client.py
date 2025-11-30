@@ -37,7 +37,7 @@ class GmailClient:
         if not self.email:
             raise ValueError("GMAIL_EMAIL environment variable not set")
         self.service = None
-        self.processed_emails_file = 'processed_emails.json'
+        self.processed_emails_file = 'logs/processed_emails.json'
         self.processed_emails = self._load_processed_emails()
         self.h2t = html2text.HTML2Text()
         self.h2t.ignore_links = False  # Preserve links for URL extraction

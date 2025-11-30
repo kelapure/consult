@@ -45,8 +45,8 @@ screenshots/
 Thumbs.db
 
 # Application specific
-processed_emails.json
-memory_store*.json
+logs/processed_emails.json
+logs/memory_store*.json
 .profile_cache.json
 manual_review_*.json
 

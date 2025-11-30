@@ -376,6 +376,9 @@ class BrowserAutomation:
         self._click_history: List[Tuple[int, int]] = []
         self._click_fallback_threshold = 2  # Use JS fallback after N clicks at same spot
         
+        # Profile support
+        self.user_data_dir: Optional[str] = None
+        
     def _log_action(self, action_data: Dict[str, Any]):
         """Add contextual information to an action and log it."""
         from datetime import datetime
@@ -390,33 +393,69 @@ class BrowserAutomation:
         self.action_log.append(full_action_data)
         logger.info(f"[{self.correlation_id}] Logged action: {action_data['action']}")
 
-    async def start_browser(self, headless: bool = None):
+    async def start_browser(self, headless: bool = None, user_data_dir: str = None):
         """
         Start Playwright browser.
 
         Args:
             headless: Override headless mode. If None, reads from HEADLESS env var (default: False)
+            user_data_dir: Path to Chrome user data directory for persistent sessions
         """
         # Environment detection
         if headless is None:
             headless = os.getenv('HEADLESS', 'false').lower() in ('true', '1', 'yes')
 
-        playwright = await async_playwright().start()
-        self.browser = await playwright.chromium.launch(headless=headless)
-        self.page = await self.browser.new_page()
+        self._playwright = await async_playwright().start()
+        
+        if user_data_dir:
+            # Create directory if it doesn't exist
+            os.makedirs(user_data_dir, exist_ok=True)
+            logger.info(f"[{self.correlation_id}] Launching persistent browser with profile: {user_data_dir}")
+            
+            # Launch persistent context
+            # Note: persistent_context is both a Browser and a Context
+            self.context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=headless,
+                viewport={"width": 1280, "height": 800},
+                args=["--disable-blink-features=AutomationControlled"] # Basic stealth
+            )
+            self.browser = None # Persistent context doesn't return a separate Browser object
+            self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+            
+        else:
+            # Standard ephemeral launch
+            self.browser = await self._playwright.chromium.launch(headless=headless)
+            self.context = await self.browser.new_context()
+            self.page = await self.context.new_page()
+
         self.action_log = []
         self.last_page_state = {}
 
         mode = "headless" if headless else "headed"
-        logger.info(f"[{self.correlation_id}] Browser started ({mode} mode)")
+        profile_msg = f" (profile: {os.path.basename(user_data_dir)})" if user_data_dir else " (fresh profile)"
+        logger.info(f"[{self.correlation_id}] Browser started in {mode} mode{profile_msg}")
 
     async def close_browser(self):
         """Close browser"""
-        if self.browser:
-            await self.browser.close()
+        try:
+            if self.context:
+                await self.context.close()
+            
+            if self.browser:
+                await self.browser.close()
+                
+            if self._playwright:
+                await self._playwright.stop()
+                
             logger.info(f"[{self.correlation_id}] Browser closed")
-        self.page = None
-        self.browser = None
+        except Exception as e:
+            logger.debug(f"[{self.correlation_id}] Error closing browser: {e}")
+        finally:
+            self.page = None
+            self.context = None
+            self.browser = None
+            self._playwright = None
 
     async def take_screenshot(self) -> bytes:
         """Take screenshot of current page"""
@@ -1077,7 +1116,7 @@ TASK:
         enhanced_task = task_prefix + task + "\n\n" + verification_prompt
 
         try:
-            await self.start_browser(headless=False)
+            await self.start_browser(headless=False, user_data_dir=self.user_data_dir)
             await self.page.goto(url)
             
             # Initial navigation verification
@@ -1721,7 +1760,7 @@ TASK:
 
         success = False  # Initialize for finally block
         try:
-            await self.start_browser(headless=False)
+            await self.start_browser(headless=False, user_data_dir=self.user_data_dir)
             await self.page.goto(url)
             
             # Initial navigation verification
@@ -2519,6 +2558,81 @@ async def submit_platform_application(
     # Create sanitized version of task for logging (redacts credentials)
     sanitized_task = mask_password_in_logs(task_prompt)
     
+    # Determine user_data_dir from platform config
+    user_data_dir = None
+    if platform_config and platform_config.get("uses_browser_profile"):
+        user_data_dir = os.path.join(os.getcwd(), "profiles", "default")
+        logger.info(f"Platform {platform_name} requests persistent profile: {user_data_dir}")
+    
+    # 1) Try Claude first (primary engine)
+    logger.info(f"Submitting {platform_name} application: trying Claude computer-use (primary)...")
+    logger.debug(f"Task (sanitized): {sanitized_task[:500]}...")
+    
+    # We need to modify how start_browser is called inside the computer_use methods
+    # But those methods call start_browser internally. 
+    # We should update the automation object to store the preferred user_data_dir
+    automation.user_data_dir = user_data_dir
+    
+    # Monkey-patch or update the start_browser method call? 
+    # Better: Update the class to store user_data_dir in __init__ or update the methods to use instance variable
+    
+    # Let's update the methods to use the instance variable if set
+    # OR simpler: just update start_browser to default to self.user_data_dir if set
+    
+    # For this specific file structure, we need to update the calls within claude_computer_use and gemini_computer_use
+    # But since I can't easily change the method signatures in this tool call without replacing the whole file,
+    # I will rely on a small hack: set the default in the class instance
+    
+    # Update: I will modify the start_browser method in the class to use self.user_data_dir
+    # But first I need to update the class definition.
+    # Since I just updated start_browser signature, I can pass it if I update the calls.
+    
+    # Wait, the previous replace updated the signature of start_browser.
+    # Now I need to update where it is CALLED inside claude_computer_use and gemini_computer_use.
+    
+    # Since I cannot update multiple locations easily with one replace block if they are far apart,
+    # I will update submit_platform_application to pass the dir to the methods, 
+    # AND update the methods to accept it.
+    
+    # Actually, the best way is to set it on the instance and have start_browser use it.
+    # Let's update __init__ and start_browser again? No, that's too many steps.
+    
+    # Let's just update the calls inside the methods.
+    pass
+
+async def submit_platform_application(
+    project_url: str,
+    task_prompt: str,
+    platform_name: str = "unknown",
+    max_retries: int = 3,
+    correlation_id: str = "N/A",
+    verification_prompt: str = "Verify that the application was successfully submitted.",
+    platform_config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Submit or decline a consultation application using Claude (primary) with Gemini fallback.
+    """
+    automation = BrowserAutomation(
+        correlation_id=correlation_id,
+        platform=platform_name,
+        project_url=project_url,
+        platform_config=platform_config
+    )
+    
+    # Determine user_data_dir
+    user_data_dir = None
+    if platform_config and platform_config.get("uses_browser_profile"):
+        user_data_dir = os.path.join(os.getcwd(), "profiles", "default")
+    
+    # Store it on the automation instance for methods to access
+    automation.user_data_dir = user_data_dir
+    
+    # Extract project ID for result
+    project_id = extract_project_id_from_url(project_url)
+
+    # Create sanitized version of task for logging (redacts credentials)
+    sanitized_task = mask_password_in_logs(task_prompt)
+    
     # 1) Try Claude first (primary engine)
     logger.info(f"Submitting {platform_name} application: trying Claude computer-use (primary)...")
     logger.debug(f"Task (sanitized): {sanitized_task[:500]}...")
@@ -2555,8 +2669,8 @@ async def submit_platform_application(
         logger.info(f"Gemini fallback attempt {attempt + 1}/{max_retries}")
 
         # Restart browser for Gemini (Claude closed it)
-        await automation.start_browser(headless=False)
-
+        # Note: gemini_computer_use calls start_browser internally, so we rely on instance var
+        
         success, actions = await automation.gemini_computer_use(
             task=task_prompt,
             url=project_url,

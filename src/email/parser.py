@@ -114,8 +114,22 @@ class EmailParser:
             is_coleman = ('coleman' in sender_email.lower() or 'visasq' in sender_email.lower() or
                          'coleman' in subject.lower() or 'visasq' in subject.lower())
 
+            # Check if this is an Office Hours email (survey platform with Google OAuth)
+            is_office_hours = ('officehours' in sender_email.lower() or 'office hours' in sender_email.lower() or
+                              'kai seed' in sender_email.lower() or 'officehours.com' in body_text)
+
+            # For Office Hours emails, use home URL (surveys accessible from dashboard)
+            if is_office_hours:
+                details['project_url'] = "https://officehours.com/home"
+                details['platform'] = 'office_hours'
+                # Try to extract survey topic from subject
+                topic_match = re.search(r'(?:Survey|Complete|Paid)[\s:]+(.+?)(?:\s*-|$)', subject, re.IGNORECASE)
+                if topic_match:
+                    details['project_id'] = topic_match.group(1).strip()[:50]
+                logger.info(f"Office Hours email: using home URL, survey topic: {details.get('project_id', 'N/A')}")
+
             # For Coleman emails, use dashboard URL (projects are accessed from dashboard)
-            if is_coleman:
+            elif is_coleman:
                 # Coleman uses a dashboard-based workflow - all projects listed at to-do URL
                 details['project_url'] = "https://experts.coleman.colemanerm.com/#!/expert/to-do"
                 # Try to extract project title from subject for reference

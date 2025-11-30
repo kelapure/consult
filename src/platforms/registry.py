@@ -7,6 +7,7 @@ from .base import BasePlatform
 from .glg_platform import GLGPlatform
 from .guidepoint_platform import GuidepointPlatform
 from .coleman_platform import ColemanPlatform
+from .office_hours_platform import OfficeHoursPlatform
 
 
 class PlatformRegistry:
@@ -24,6 +25,7 @@ class PlatformRegistry:
         self.register('glg', GLGPlatform)
         self.register('guidepoint', GuidepointPlatform)
         self.register('coleman', ColemanPlatform)
+        self.register('office_hours', OfficeHoursPlatform)
         # Future: self.register('alphasights', AlphaSightsPlatform)
     
     def register(self, name: str, platform_class: Type[BasePlatform]):
@@ -62,6 +64,15 @@ class PlatformRegistry:
             return 'coleman'
         if 'coleman' in subject or 'visasq' in subject:
             return 'coleman'
+
+        # Office Hours detection - survey platform with Google OAuth
+        # Emails from officehours.com or Kai Seed
+        if 'officehours' in sender or 'office hours' in sender:
+            return 'office_hours'
+        if 'officehours.com' in body:
+            return 'office_hours'
+        if 'kai seed' in sender:
+            return 'office_hours'
 
         # AlphaSights detection
         if 'alphasights' in sender or 'alphasights' in subject:

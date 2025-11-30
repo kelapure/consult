@@ -14,7 +14,7 @@ class MemoryStore:
 
     def __init__(self):
         """Initialize memory store with local JSON storage"""
-        self.local_store_file = 'memory_store.json'
+        self.local_store_file = 'logs/memory_store.json'
         logger.info("Using local JSON storage for memory")
         self._load_local_store()
 
