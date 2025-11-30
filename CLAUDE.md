@@ -19,6 +19,7 @@ playwright install chromium
 ```bash
 python main.py --days 7                       # Process last 7 days of emails
 python main.py --platform glg                 # Process specific platform (glg|guidepoint|coleman|office_hours)
+python main.py --mode dashboard --platform office_hours  # Batch process ALL invitations on dashboard
 python main.py --headless --debug             # Headless with debug screenshots
 python main.py --report-only                  # Generate report only
 python main.py --view-metrics 30              # View 30-day metrics

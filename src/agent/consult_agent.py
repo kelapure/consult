@@ -1159,15 +1159,16 @@ async def finalize_run_and_report(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def run_consult_agent(days_back: int, platform_filter: str = None) -> Dict[str, Any]:
+async def run_consult_agent(days_back: int, platform_filter: str = None, mode: str = "email") -> Dict[str, Any]:
     """Run the ConsultPipelineAgent loop via the Claude Agent SDK.
 
     This sets up a fresh agent context for the run and delegates
     control to the Agent SDK, which will use the defined tools.
-    
+
     Args:
         days_back: Number of days to look back for emails
         platform_filter: Optional platform to focus on (e.g., 'glg', 'guidepoint')
+        mode: Processing mode - 'email' (default) or 'dashboard' (batch process all invitations)
     """
     global agent_ctx
     from datetime import datetime, timedelta, timedelta
@@ -1226,7 +1227,34 @@ async def run_consult_agent(days_back: int, platform_filter: str = None) -> Dict
 
     async with ClaudeSDKClient(options=options) as client:
         # Kick off the run. The agent will call tools as needed.
-        if platform_filter:
+        if mode == "dashboard" and platform_filter:
+            # DASHBOARD MODE: Batch process ALL invitations in ONE browser session
+            auth_type = _get_platform_auth_type(platform_filter)
+            query = f"""Process ALL {platform_filter.upper()} invitations in BATCH DASHBOARD mode:
+
+1. Call get_platform_login_info to get dashboard_url and credentials
+2. Call get_profile_summary to understand evaluation criteria
+3. Call get_cp_writing_style to understand writing principles
+4. Call submit_platform_application with:
+   - project_url: the dashboard_url from step 1
+   - platform_name: "{platform_filter}"
+   - form_data: {{"mode": "batch_dashboard", "profile": "<include profile summary from step 2>"}}
+   - login_username and login_password from step 1 (null for Google OAuth platforms)
+
+CRITICAL: You MUST set form_data["mode"] = "batch_dashboard" to enable batch processing.
+This will process ALL available invitations in ONE browser session.
+
+The browser automation will:
+- Login to the platform (using credentials or Google OAuth)
+- Navigate to the dashboard
+- Process ALL visible invitations/surveys one by one
+- Complete each form using CP writing style and profile context
+- Submit each response before moving to the next
+
+5. Call finalize_run_and_report with summary of all processed invitations
+"""
+            logger.info(f"[Correlation ID: {run_id}] Starting DASHBOARD mode for {platform_filter.upper()} (batch processing)")
+        elif platform_filter:
             # Check if this is a Google OAuth platform
             auth_type = _get_platform_auth_type(platform_filter)
 

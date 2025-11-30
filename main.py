@@ -38,7 +38,13 @@ async def main():
     parser.add_argument('--headless', action='store_true', help='Run browser in headless mode (no UI)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (save screenshots, verbose logging)')
     parser.add_argument('--platform', type=str, choices=['glg', 'guidepoint', 'coleman', 'office_hours'], help='Focus on a specific platform (glg, guidepoint, coleman, or office_hours)')
+    parser.add_argument('--mode', type=str, choices=['email', 'dashboard'], default='email',
+                        help='Processing mode: email (default) or dashboard (batch process all invitations)')
     args = parser.parse_args()
+
+    # Validate: dashboard mode requires --platform
+    if args.mode == 'dashboard' and not args.platform:
+        parser.error("Dashboard mode requires --platform flag")
 
     # Configure environment based on flags
     if args.headless:
@@ -83,8 +89,9 @@ async def main():
 
         # Run automation via Agent SDK
         platform_msg = f" (focusing on {args.platform.upper()})" if args.platform else ""
-        logger.info(f"Starting consultation automation (processing last {args.days} days){platform_msg}")
-        result = await run_consult_agent(days_back=args.days, platform_filter=args.platform)
+        mode_msg = f" in {args.mode.upper()} mode" if args.mode != 'email' else ""
+        logger.info(f"Starting consultation automation (processing last {args.days} days){platform_msg}{mode_msg}")
+        result = await run_consult_agent(days_back=args.days, platform_filter=args.platform, mode=args.mode)
 
         if result:
             logger.success(f"Processed {result.get('emails_processed', 0)} emails")
