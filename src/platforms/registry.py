@@ -5,6 +5,8 @@ from loguru import logger
 
 from .base import BasePlatform
 from .glg_platform import GLGPlatform
+from .guidepoint_platform import GuidepointPlatform
+from .coleman_platform import ColemanPlatform
 
 
 class PlatformRegistry:
@@ -20,8 +22,9 @@ class PlatformRegistry:
     def _register_defaults(self):
         """Register default platform implementations"""
         self.register('glg', GLGPlatform)
+        self.register('guidepoint', GuidepointPlatform)
+        self.register('coleman', ColemanPlatform)
         # Future: self.register('alphasights', AlphaSightsPlatform)
-        # Future: self.register('guidepoint', GuidepointPlatform)
     
     def register(self, name: str, platform_class: Type[BasePlatform]):
         """
@@ -48,18 +51,28 @@ class PlatformRegistry:
         subject = email.get('subject', '').lower()
         body = email.get('bodyText', '').lower()
         
-        # GLG detection
-        if 'glg' in sender or 'glg' in subject or 'glg.it' in body:
-            return 'glg'
-        
+        # Guidepoint detection - check FIRST since sender domain is most reliable
+        # Emails from @guidepointglobal.com or @guidepoint.com
+        if 'guidepoint' in sender or 'guidepoint' in subject:
+            return 'guidepoint'
+
+        # Coleman/VISASQ detection - check before other platforms
+        # Emails from VISASQ/Coleman or containing coleman in subject
+        if 'coleman' in sender or 'visasq' in sender:
+            return 'coleman'
+        if 'coleman' in subject or 'visasq' in subject:
+            return 'coleman'
+
         # AlphaSights detection
         if 'alphasights' in sender or 'alphasights' in subject:
             return 'alphasights'
-        
-        # Guidepoint detection
-        if 'guidepoint' in sender or 'guidepoint' in subject:
-            return 'guidepoint'
-        
+
+        # GLG detection - check last since 'glg' can appear in other email bodies
+        if 'glgroup.com' in sender or 'glg.it' in sender or '@glg' in sender:
+            return 'glg'
+        if 'glg' in subject or 'glg.it' in body:
+            return 'glg'
+
         return None
     
     def get_platform(self, name: str) -> Optional[BasePlatform]:

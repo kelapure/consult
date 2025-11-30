@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guidepoint Consultation Request</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8f9fa;
+            padding: 20px;
+            color: #333;
+        }
+
+        /* Cookie Banner */
+        #cookie-banner {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #1a365d;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+        }
+
+        #cookie-banner.hidden {
+            display: none;
+        }
+
+        #cookie-banner p {
+            flex: 1;
+            margin-right: 20px;
+            font-size: 14px;
+        }
+
+        #accept-cookies {
+            background: #38a169;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        #accept-cookies:hover {
+            background: #2f855a;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            border-bottom: 3px solid #1a365d;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #1a365d;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .project-info {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-section {
+            margin-bottom: 35px;
+            padding-bottom: 25px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .form-section:last-of-type {
+            border-bottom: none;
+        }
+
+        .section-title {
+            color: #1a365d;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .important-notice {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .important-notice h3 {
+            color: #b45309;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .important-notice p {
+            color: #92400e;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2d3748;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .required {
+            color: #e53e3e;
+        }
+
+        .question-text {
+            font-size: 14px;
+            color: #4a5568;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #3182ce;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        /* Radio button styling */
+        .radio-group {
+            display: flex;
+            gap: 25px;
+            margin-top: 10px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 10px 15px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .radio-label:hover {
+            border-color: #3182ce;
+            background: #ebf8ff;
+        }
+
+        .radio-label.selected {
+            border-color: #3182ce;
+            background: #ebf8ff;
+        }
+
+        input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        /* Checkbox styling */
+        .checkbox-group {
+            margin-top: 15px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: flex-start;
+            cursor: pointer;
+            margin-bottom: 15px;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .checkbox-label:hover {
+            border-color: #3182ce;
+            background: #f7fafc;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 12px;
+            margin-top: 2px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .checkbox-text {
+            font-size: 13px;
+            color: #4a5568;
+            line-height: 1.5;
+        }
+
+        .checkbox-text a {
+            color: #3182ce;
+            text-decoration: underline;
+        }
+
+        /* Submit button */
+        .submit-section {
+            text-align: center;
+            padding-top: 20px;
+        }
+
+        button[type="submit"] {
+            background: #1a365d;
+            color: white;
+            border: none;
+            padding: 14px 50px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button[type="submit"]:hover {
+            background: #2c5282;
+        }
+
+        button[type="submit"]:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+
+        /* Success message */
+        #success-message {
+            display: none;
+            background: #c6f6d5;
+            border: 1px solid #48bb78;
+            color: #276749;
+            padding: 25px;
+            border-radius: 6px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        #success-message h2 {
+            color: #276749;
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+
+        #success-message p {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .helper-text {
+            font-size: 12px;
+            color: #718096;
+            margin-top: 6px;
+        }
+
+        /* Language selector */
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .language-selector select {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Cookie Consent Banner -->
+    <div id="cookie-banner">
+        <p>
+            We use cookies to enhance your experience. By continuing to use this site you agree to our use of cookies.
+        </p>
+        <button id="accept-cookies">Accept</button>
+    </div>
+
+    <!-- Language Selector -->
+    <div class="language-selector">
+        <select id="language" name="language">
+            <option value="en" selected>English</option>
+            <option value="zh-CN">Chinese: Simplified</option>
+            <option value="zh-TW">Chinese: Traditional</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+            <option value="pt">Portuguese</option>
+            <option value="es">Spanish</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Consultation Request: AI/ML Enterprise Solutions</h1>
+            <p class="project-info">Estimated time: 5 mins | Project #1612049</p>
+        </div>
+
+        <form id="consultation-form">
+            <!-- Rate Limit Section -->
+            <div class="form-section">
+                <h2 class="section-title">Rate Limit</h2>
+                <p class="question-text">
+                    <strong>For this project, there is an hourly rate limit of USD 325.</strong><br>
+                    By agreeing to this limit, you acknowledge that USD 325/hour will be your new rate for this project.
+                    This will not affect your standard hourly rate with Guidepoint on other projects.
+                </p>
+                <div class="form-group">
+                    <label>Do you accept or decline this project's rate limit? <span class="required">*</span></label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="rate-limit" value="accept" required>
+                            Accept
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="rate-limit" value="decline">
+                            Decline
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Agreement Section -->
+            <div class="form-section">
+                <div class="important-notice">
+                    <h3>Please read – Important Notice</h3>
+                    <p>
+                        You may not use any third-party sources, including artificial intelligence tools, 
+                        in responding to these screening questions or while participating in any consultation 
+                        with a Guidepoint client. Guidepoint reserves the right to deny payment for any consultation, 
+                        and may remove you from its network, if it determines that you have misrepresented your 
+                        identity, experience or knowledge or used third-party sources in connection with the consultation.
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label>Do you agree to participate in this consultation on these terms? <span class="required">*</span></label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="ai-agreement" value="agree" required>
+                            I agree
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="ai-agreement" value="disagree">
+                            I do not agree
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Client Screening Questions -->
+            <div class="form-section">
+                <h2 class="section-title">Screening Questions for Client Review</h2>
+                
+                <div class="form-group">
+                    <label>Q. 1</label>
+                    <p class="question-text">
+                        Are you currently the most senior person in your organization (e.g. CEO, Owner, Founder, 
+                        or equivalent if a CEO role does not exist), <strong>or</strong> alternatively are you 
+                        self-employed, retired, or unemployed?
+                    </p>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="senior-role" value="yes" required>
+                            Yes
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="senior-role" value="no">
+                            No
+                        </label>
+                    </div>
+                    <div class="helper-text">Note: If you currently hold multiple roles, please indicate your status for each position accordingly</div>
+                </div>
+
+                <div class="form-group" id="explain-role" style="display: none;">
+                    <label for="role-explanation">Please explain further</label>
+                    <textarea id="role-explanation" name="role-explanation" placeholder="Describe your current role(s) and responsibilities..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="current-employer">Q. 2 - Please state your <strong>current</strong> employer(s). <span class="required">*</span></label>
+                    <input type="text" id="current-employer" name="current-employer" required placeholder="Enter your current employer(s)">
+                </div>
+
+                <div class="form-group">
+                    <label for="current-title">Q. 3 - Please state your <strong>current</strong> title(s). <span class="required">*</span></label>
+                    <input type="text" id="current-title" name="current-title" required placeholder="Enter your current title(s)">
+                </div>
+
+                <div class="form-group">
+                    <label>Q. 4 - Is your Guidepoint profile up to date? <span class="required">*</span></label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="profile-updated" value="yes" required>
+                            Yes
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="profile-updated" value="no">
+                            No
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Industry Expert Screening Questions -->
+            <div class="form-section">
+                <h2 class="section-title">Screening Questions for Industry Experts</h2>
+                <p class="question-text" style="margin-bottom: 25px;">
+                    Our client would like to gain a better understanding of AI/ML enterprise solutions 
+                    by speaking with experts who are familiar.
+                </p>
+
+                <div class="form-group">
+                    <label for="experience-summary">Q. 1 - Please outline your experience and suitability to discuss. <span class="required">*</span></label>
+                    <p class="helper-text" style="margin-bottom: 10px;">
+                        In your response please indicate: Relevant companies worked for, Years of experience, 
+                        Roles/responsibilities, Geographies/regions etc.
+                    </p>
+                    <textarea id="experience-summary" name="experience-summary" required 
+                        placeholder="Describe your relevant experience and qualifications..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="expert-q2">Q. 2 - What is your experience with enterprise AI/ML implementations? <span class="required">*</span></label>
+                    <textarea id="expert-q2" name="expert-q2" required 
+                        placeholder="Describe your experience with AI/ML implementations..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="expert-q3">Q. 3 - How do you evaluate and select AI vendors for enterprise deployments? <span class="required">*</span></label>
+                    <textarea id="expert-q3" name="expert-q3" required 
+                        placeholder="Describe your evaluation criteria and process..."></textarea>
+                </div>
+            </div>
+
+            <!-- Compliance Section -->
+            <div class="form-section">
+                <h2 class="section-title">Compliance</h2>
+                
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="terms-checkbox" name="terms" required>
+                        <span class="checkbox-text">
+                            By checking this box you confirm that you have read Guidepoint's 
+                            <a href="#">Terms and Conditions</a> and that you agree to conduct this 
+                            consultation in compliance with them. You also confirm that you have read 
+                            and agree to Guidepoint's <a href="#">Privacy Policy</a>.
+                            <span class="required">*</span>
+                        </span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="tutorial-checkbox" name="tutorial" required>
+                        <span class="checkbox-text">
+                            By checking this box you confirm that you have completed Guidepoint's 
+                            <a href="#">Advisor Compliance Tutorial</a> at least once within the last 12 months.
+                            <span class="required">*</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="submit-section">
+                <button type="submit" id="submit-btn">SUBMIT</button>
+            </div>
+
+            <div id="success-message">
+                <h2>✓ Thank you for your response!</h2>
+                <p>Your response has been submitted successfully. We will review your information and contact you if there's a suitable opportunity.</p>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Cookie banner handling
+        const cookieBanner = document.getElementById('cookie-banner');
+        const acceptCookies = document.getElementById('accept-cookies');
+
+        acceptCookies.addEventListener('click', function() {
+            cookieBanner.classList.add('hidden');
+            localStorage.setItem('guidepoint-cookies-accepted', 'true');
+        });
+
+        if (localStorage.getItem('guidepoint-cookies-accepted') === 'true') {
+            cookieBanner.classList.add('hidden');
+        }
+
+        // Radio button styling
+        document.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Remove selected class from siblings
+                const name = this.name;
+                document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+                    r.closest('.radio-label').classList.remove('selected');
+                });
+                // Add selected class to current
+                this.closest('.radio-label').classList.add('selected');
+            });
+        });
+
+        // Show/hide role explanation based on senior role answer
+        document.querySelectorAll('input[name="senior-role"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const explainDiv = document.getElementById('explain-role');
+                if (this.value === 'no') {
+                    explainDiv.style.display = 'block';
+                } else {
+                    explainDiv.style.display = 'none';
+                }
+            });
+        });
+
+        // Form submission handling
+        const form = document.getElementById('consultation-form');
+        const successMessage = document.getElementById('success-message');
+        const submitBtn = document.getElementById('submit-btn');
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            // Check rate limit acceptance
+            const rateAccepted = document.querySelector('input[name="rate-limit"]:checked');
+            if (!rateAccepted) {
+                alert('Please accept or decline the rate limit');
+                return;
+            }
+
+            // Check AI agreement
+            const aiAgreed = document.querySelector('input[name="ai-agreement"]:checked');
+            if (!aiAgreed) {
+                alert('Please respond to the AI tools agreement');
+                return;
+            }
+
+            // Check compliance checkboxes
+            const termsChecked = document.getElementById('terms-checkbox').checked;
+            const tutorialChecked = document.getElementById('tutorial-checkbox').checked;
+
+            if (!termsChecked || !tutorialChecked) {
+                alert('Please check all required compliance boxes');
+                return;
+            }
+
+            // Hide form and show success message
+            form.style.display = 'none';
+            successMessage.style.display = 'block';
+
+            // Scroll to success message
+            successMessage.scrollIntoView({ behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>
+

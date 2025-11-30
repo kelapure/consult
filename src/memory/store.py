@@ -39,6 +39,31 @@ class MemoryStore:
                 'telemetry': [],
                 'metrics': {}
             }
+        
+        # Validate and migrate consultations data structure
+        self._validate_consultations_structure()
+
+    def _validate_consultations_structure(self):
+        """Ensure consultations is a dict, not a list. Migrate if needed."""
+        consultations = self.local_data.get('consultations')
+        
+        if not isinstance(consultations, dict):
+            logger.warning(f"Converting consultations from {type(consultations).__name__} to dict")
+            old_consultations = consultations if isinstance(consultations, list) else []
+            self.local_data['consultations'] = {}
+            
+            # Migrate any existing list entries
+            if isinstance(old_consultations, list):
+                for item in old_consultations:
+                    if isinstance(item, dict) and 'email_id' in item:
+                        email_id = item['email_id']
+                        self.local_data['consultations'][email_id] = item
+                        logger.info(f"Migrated consultation: {email_id[:16]}...")
+                    elif isinstance(item, dict):
+                        logger.warning(f"Skipping list entry without email_id: {list(item.keys())[:3]}")
+            
+            self._save_local_store()
+            logger.info(f"Migrated {len(self.local_data['consultations'])} consultations to dict format")
 
     def _save_local_store(self):
         """Save local JSON store"""
@@ -104,8 +129,16 @@ class MemoryStore:
         Declined emails and accepted-but-not-submitted emails will be re-evaluated.
         """
         try:
-            consultation = self.local_data['consultations'].get(email_id)
-            if not consultation:
+            consultations = self.local_data.get('consultations', {})
+            
+            # Validate consultations is a dict
+            if not isinstance(consultations, dict):
+                logger.error(f"consultations is {type(consultations).__name__}, expected dict - running migration")
+                self._validate_consultations_structure()
+                consultations = self.local_data.get('consultations', {})
+            
+            consultation = consultations.get(email_id)
+            if not isinstance(consultation, dict):
                 return False
             
             # Only considered processed if accepted AND submitted on platform
@@ -127,7 +160,12 @@ class MemoryStore:
     def get_consultation(self, email_id: str) -> Optional[Dict[str, Any]]:
         """Get consultation record"""
         try:
-            return self.local_data['consultations'].get(email_id)
+            consultations = self.local_data.get('consultations', {})
+            if not isinstance(consultations, dict):
+                logger.error(f"consultations is {type(consultations).__name__}, expected dict")
+                self._validate_consultations_structure()
+                consultations = self.local_data.get('consultations', {})
+            return consultations.get(email_id)
         except Exception as e:
             logger.error(f"Error getting consultation: {e}")
             return None

@@ -41,15 +41,12 @@ High-level goals:
 - Maintain clear logs and metrics for each run.
 
 Context:
-- You operate on consulting opportunities from platforms like GLG and similar expert networks.
+- You operate on consulting opportunities from various expert networks.
 - You have tools to:
   - Read and manage my Gmail.
   - Parse and classify emails into structured consultation details.
   - Aggregate my profile into a summary.
-  - Log into platforms and navigate to specific project pages. One such platform is GLG.
-  - Prepare application data (form fields) for each consultation.
-  - Use a computer (mouse, keyboard, scroll) to fill and submit web forms.
-  - Record decisions, metrics, and reports in a memory/analytics store for future reference.
+  - Log into platforms and navigate to specific project pages. These platforms vary.
 
 Decision policy - Profile Matching Criteria:
 - Use list_recent_consultation_emails to find recent emails and get_profile_summary to understand my background.
@@ -205,6 +202,11 @@ Operational guidelines:
   - Arrow keys: Navigate dropdown options
   - Escape: Close dropdowns/modals
 
+**INITIAL NAVIGATION AND SETUP:**
+- Your first action should always be to navigate to the `project_url`.
+- After navigating, verify that the page has loaded correctly and that you are not on an error page.
+- If a cookie banner is present, try clicking the "Accept" button. If the banner is not dismissed after two attempts, try clicking with a slight offset or use a JavaScript fallback.
+
 **ERROR HANDLING AND VERIFICATION:**
 - After every navigation action, verify the page title and URL to ensure you are on the correct page.
 - If you encounter an error page (e.g., "Something didn't go right", "Page not found"), treat this as a failure.
@@ -217,6 +219,19 @@ Operational guidelines:
 - You are an autonomous agent. Do not stop mid-workflow to ask for clarification or confirmation.
 - If a step fails, try alternatives or record the failure and move on.
 - Complete the ENTIRE workflow from start to finish in one continuous operation.
+
+**MULTI-STEP FORM COMPLETION:**
+- Many platform applications have multiple steps (product questions → comments → phone → rate → terms → submit → scheduling).
+- You MUST complete ALL steps, not just the first one.
+- After clicking "Submit" or "Apply", there may be additional steps like availability scheduling.
+- Keep going until you see a clear completion message (e.g., "Thanks, you're all set!").
+- The workflow is NOT complete until you reach the final confirmation screen.
+
+**SCHEDULING/AVAILABILITY COMPLETION:**
+- If the platform asks for availability after form submission, you MUST complete it.
+- Add at least THREE availability slots (typically the next WEEK days, 7-9 AM).
+- Click "Save" and "Proceed" to finalize the scheduling.
+- Do NOT leave the page until availability is confirmed.
 
 **MULTI-STEP FORM COMPLETION:**
 - Many platform applications have multiple steps (product questions → comments → phone → rate → terms → submit → scheduling).
@@ -266,7 +281,7 @@ Loop behavior for a run:
 2. Choose ONE of these approaches based on the user's request:
 
    OPTION A - Dashboard-based processing (for ALL platform projects):
-   a. Use submit_platform_application with the dashboard_url from get_platform_login_info
+   a. Use `submit_platform_application` with the `dashboard_url` from `get_platform_login_info`
    b. The browser automation will:
       - Login using provided credentials
       - Navigate to the projects/opportunities dashboard
@@ -275,7 +290,7 @@ Loop behavior for a run:
         * Evaluate fit using my profile and decision criteria
         * Accept (fill application form with CP-styled responses) or Decline
         * Return to dashboard and process the next project
-   c. After processing all dashboard projects, record decisions using record_consultation_decision.
+   c. After processing all dashboard projects, record decisions using `record_consultation_decision`.
 
    OPTION B - Email-based processing (for Gmail consultation emails):
    a. Use list_recent_consultation_emails to find opportunities.
@@ -916,6 +931,65 @@ async def submit_platform_application(args: Dict[str, Any]) -> Dict[str, Any]:
             "is_error": True,
         }
 
+    # Check for batch dashboard mode - process ALL invitations in ONE browser session
+    if isinstance(form_data, dict) and form_data.get("mode") == "batch_dashboard":
+        logger.info(f"[Correlation ID: {ctx.correlation_id}] Using BATCH DASHBOARD mode for {platform_name}")
+        try:
+            from ..browser.computer_use import BrowserAutomation
+            from datetime import datetime
+            from pathlib import Path
+            
+            profile_context = form_data.get("profile", {})
+            if isinstance(profile_context, str):
+                try:
+                    profile_context = json.loads(profile_context)
+                except json.JSONDecodeError:
+                    profile_context = {"summary": profile_context}
+            
+            browser = BrowserAutomation(platform_name, ctx.correlation_id)
+            processed_count, actions = await browser.process_dashboard_invitations(
+                dashboard_url=project_url,
+                login_username=login_username or "",
+                login_password=login_password or "",
+                profile_context=profile_context
+            )
+            
+            # Save action log
+            logs_dir = Path("logs/runs")
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            status = "success" if processed_count > 0 else "failure"
+            log_file = logs_dir / f"{platform_name}_{timestamp}_batch_{status}.json"
+            
+            with open(log_file, "w") as f:
+                json.dump(actions, f, indent=2, default=str)
+            logger.info(f"[Correlation ID: {ctx.correlation_id}] Saved batch action log to {log_file}")
+            
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({
+                            "success": processed_count > 0,
+                            "mode": "batch_dashboard",
+                            "processed_count": processed_count,
+                            "actions_taken": len(actions),
+                            "log_file": str(log_file),
+                            "message": f"Batch processed {processed_count} invitations in ONE browser session"
+                        })
+                    }
+                ],
+                "is_error": False,
+            }
+        except Exception as e:
+            logger.error(f"[Correlation ID: {ctx.correlation_id}] Batch dashboard processing error: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Batch dashboard processing failed: {str(e)}"}
+                ],
+                "is_error": True,
+            }
+
     try:
         # Import generic browser automation
         from ..browser.computer_use import submit_platform_application as submit_platform_application_impl
@@ -1054,11 +1128,15 @@ async def finalize_run_and_report(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def run_consult_agent(days_back: int) -> Dict[str, Any]:
+async def run_consult_agent(days_back: int, platform_filter: str = None) -> Dict[str, Any]:
     """Run the ConsultPipelineAgent loop via the Claude Agent SDK.
 
     This sets up a fresh agent context for the run and delegates
     control to the Agent SDK, which will use the defined tools.
+    
+    Args:
+        days_back: Number of days to look back for emails
+        platform_filter: Optional platform to focus on (e.g., 'glg', 'guidepoint')
     """
     global agent_ctx
     from datetime import datetime, timedelta, timedelta
@@ -1117,10 +1195,37 @@ async def run_consult_agent(days_back: int) -> Dict[str, Any]:
 
     async with ClaudeSDKClient(options=options) as client:
         # Kick off the run. The agent will call tools as needed.
-        logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {days_back} days")
-        await client.query(
-            f"Process consultation emails from the last {days_back} days."
-        )
+        if platform_filter:
+            # Use single-invitation mode with Gemini Computer Use
+            query = f"""Process {platform_filter.upper()} consultation opportunities:
+
+1. Call get_platform_login_info to get dashboard_url and credentials
+2. Call get_profile_summary to understand evaluation criteria
+3. Call get_cp_writing_style to understand writing principles
+4. Call submit_platform_application with:
+   - project_url: the dashboard_url from step 1
+   - platform_name: "{platform_filter}"
+   - form_data: A task description for the AI to complete the first available invitation:
+     "Login to {platform_filter.upper()} dashboard, click on the FIRST 'Complete Vetting Q&A' button,
+      fill out the vetting questions using the profile context, complete all steps including
+      rate confirmation and final submission. Use Tab key for navigation."
+   - login_username and login_password from step 1
+
+This will use Gemini Computer Use to:
+- Login with provided credentials
+- Navigate to dashboard
+- Click the first available opportunity
+- Complete the vetting form
+- Submit the application
+
+5. Record the decision using record_consultation_decision
+6. Call finalize_run_and_report
+"""
+            logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {platform_filter.upper()} single invitation processing")
+        else:
+            query = f"Process consultation emails from the last {days_back} days."
+            logger.info(f"[Correlation ID: {run_id}] Starting Claude Agent SDK run for {days_back} days")
+        await client.query(query)
 
         # Drain responses so the loop completes.
         message_count = 0

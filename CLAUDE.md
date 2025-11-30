@@ -24,13 +24,12 @@ python main.py --view-runs 10     # View last 10 runs
 python main.py --headless         # Run browser without UI
 python main.py --debug            # Enable debug mode (screenshots, verbose logs)
 python main.py --days 7 --headless --debug  # Combine flags
+python main.py --platform glg              # Process specific platform dashboard
+python main.py --platform guidepoint       # Process specific platform dashboard
 ```
 
 ### Testing
 ```bash
-# Install test dependencies (if not already installed)
-pip install pytest pytest-asyncio pytest-playwright
-
 # Run all tests
 pytest tests/ -v
 
@@ -39,34 +38,19 @@ pytest tests/unit/ -v          # Unit tests (fast, isolated)
 pytest tests/integration/ -v   # Integration tests (browser, APIs)
 pytest tests/e2e/ -v           # End-to-end tests (full pipeline)
 
-# Run specific test files
+# Run specific test file
+pytest tests/test_claude_baseline.py -v
+
+# Run single test function
+pytest tests/unit/test_cookie_detection.py::test_function_name -v
+
+# Key browser automation tests
 pytest tests/test_claude_baseline.py -v      # Simple form automation
 pytest tests/test_complex_form.py -v         # Complex GLG-like form
 pytest tests/test_gemini_baseline.py -v      # Gemini Computer Use
 
-# Unit tests
-pytest tests/unit/test_credential_sanitization.py -v
-pytest tests/unit/test_cookie_detection.py -v
-pytest tests/unit/test_screenshot.py -v
-pytest tests/unit/test_browser_lifecycle.py -v
-pytest tests/unit/test_claude_parsing.py -v
-pytest tests/unit/test_gemini_parsing.py -v
-
-# Integration tests
-pytest tests/integration/test_cookie_consent.py -v
-pytest tests/integration/test_computer_use_phase3.py -v
-pytest tests/integration/test_computer_use_login.py -v
-
-# E2E tests
-pytest tests/e2e/test_pipeline.py -v
-pytest tests/e2e/test_agent_integration.py -v
-pytest tests/e2e/test_benchmark.py -v
-
 # Test individual components without pytest
-# Test profile aggregation
 python -c "from src.profile.aggregator import ProfileAggregator; import asyncio; asyncio.run(ProfileAggregator().aggregate())"
-
-# Test Gmail connection
 python -c "from src.email.gmail_client import GmailClient; GmailClient().authenticate()"
 ```
 
@@ -181,20 +165,14 @@ Gmail API → EmailParser → PlatformRegistry
 ## Critical Files
 
 - **`main.py`** - Entry point, calls run_consult_agent()
-- **`src/agent/consult_agent.py`** - Main agent with MCP tools and system prompt
-- **`src/agent/utils.py`** - Agent utilities
+- **`src/agent/consult_agent.py`** - Main agent with MCP tools and system prompt (SYSTEM_PROMPT defines all behavior)
 - **`src/browser/computer_use.py`** - Browser automation (Gemini + Claude Computer Use)
-- **`src/browser/sanitize.py`** - Credential sanitization for logs
-- **`src/browser/cookie_detection.py`** - Cookie consent detection
-- **`src/platforms/base.py`** - Platform abstraction (data provider)
-- **`src/platforms/glg_platform.py`** - GLG implementation
+- **`src/platforms/base.py`** - Platform abstraction interface
+- **`src/platforms/registry.py`** - Platform routing via detect_platform()
 - **`src/email/processor.py`** - Email processing workflow
 - **`src/memory/store.py`** - Local JSON persistence
 - **`config/config.yaml`** - Profile, skills, rates, preferences
-- **`tests/conftest.py`** - Pytest fixtures and configuration
-- **`tests/test_claude_baseline.py`** - Browser automation tests (simple form)
-- **`tests/test_complex_form.py`** - Browser automation tests (complex GLG-like form)
-- **`tests/test_gemini_baseline.py`** - Gemini Computer Use tests
+- **`config/cp_writing_style.md`** - Writing style guide for generated content
 
 ## Environment Variables
 
@@ -207,9 +185,22 @@ GOOGLE_API_KEY=AIza-xxx       # Google Gemini API key (for Computer Use)
 
 ### Optional (Platforms)
 ```bash
+# GLG Platform
 GLG_USERNAME=username         # Required for Computer Use login
 GLG_PASSWORD=password         # Required for Computer Use login
 GLG_LOGIN_URL=https://glg.it/login
+
+# Guidepoint Platform
+GUIDEPOINT_USERNAME=username  # Guidepoint login username
+GUIDEPOINT_PASSWORD=password  # Guidepoint login password
+GUIDEPOINT_LOGIN_URL=https://new.guidepointglobaladvisors.com/login
+GUIDEPOINT_DASHBOARD_URL=https://new.guidepointglobaladvisors.com/requests
+
+# Coleman Platform (VISASQ/Coleman)
+COLEMAN_USERNAME=email@gmail.com      # Coleman login email
+COLEMAN_PASSWORD=password             # Coleman login password
+COLEMAN_LOGIN_URL=https://experts.coleman.colemanerm.com
+COLEMAN_DASHBOARD_URL=https://experts.coleman.colemanerm.com/#!/expert/to-do
 ```
 
 ### Optional (Configuration)

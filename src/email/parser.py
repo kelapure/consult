@@ -101,15 +101,73 @@ class EmailParser:
                     details['start_date'] = start_match.group(1)
                     break
             
-            # Extract project URL
-            url_pattern = r'https?://[^\s<>"]+'
+            # Extract project URL with platform-aware logic
+            url_pattern = r'https?://[^\s<>"\])]+'
             urls = re.findall(url_pattern, body_original)
-            if urls:
-                details['project_url'] = urls[0]
-                # Try to extract project ID
-                project_id_match = re.search(r'/projects?/([^/?]+)', urls[0])
+            subject = email_content.get('subject', '')
+            sender_email = email_content.get('sender_email', '')
+            
+            # Check if this is a Guidepoint email
+            is_guidepoint = 'guidepoint' in sender_email.lower() or 'guidepoint' in subject.lower()
+
+            # Check if this is a Coleman/VISASQ email
+            is_coleman = ('coleman' in sender_email.lower() or 'visasq' in sender_email.lower() or
+                         'coleman' in subject.lower() or 'visasq' in subject.lower())
+
+            # For Coleman emails, use dashboard URL (projects are accessed from dashboard)
+            if is_coleman:
+                # Coleman uses a dashboard-based workflow - all projects listed at to-do URL
+                details['project_url'] = "https://experts.coleman.colemanerm.com/#!/expert/to-do"
+                # Try to extract project title from subject for reference
+                # Subject pattern: "Following-up on New Request from VISASQ/Coleman: {Title}"
+                title_match = re.search(r'(?:from\s+)?(?:VISASQ/)?Coleman[:\s]+(.+?)(?:\s*-|$)', subject, re.IGNORECASE)
+                if title_match:
+                    details['project_id'] = title_match.group(1).strip()[:50]  # Use title as ID
+                logger.info(f"Coleman email: using dashboard URL, project reference: {details.get('project_id', 'N/A')}")
+
+            # For Guidepoint emails, extract project ID from subject and construct direct URL
+            elif is_guidepoint:
+                # Extract project ID from subject (e.g., "(#1647050)" or "#1645979")
+                project_id_match = re.search(r'#(\d{6,8})', subject)
                 if project_id_match:
-                    details['project_id'] = project_id_match.group(1)
+                    project_id = project_id_match.group(1)
+                    details['project_id'] = project_id
+                    # Construct direct form URL
+                    details['project_url'] = f"https://new.guidepointglobaladvisors.com/requests/response/{project_id}"
+                    logger.info(f"Guidepoint email: extracted project ID {project_id}, URL: {details['project_url']}")
+                else:
+                    # Fallback: try to find guidepointglobaladvisors URLs in body
+                    guidepoint_urls = [u for u in urls if 'guidepointglobaladvisors.com/requests' in u]
+                    if guidepoint_urls:
+                        details['project_url'] = guidepoint_urls[0]
+                        pid_match = re.search(r'/response/(\d+)', guidepoint_urls[0])
+                        if pid_match:
+                            details['project_id'] = pid_match.group(1)
+                    else:
+                        # Use dashboard URL as fallback
+                        details['project_url'] = "https://new.guidepointglobaladvisors.com/requests"
+                        logger.warning(f"Guidepoint email without project ID in subject: {subject}")
+            else:
+                # For GLG and other platforms
+                glg_urls = [u for u in urls if 'members.glgresearch.com/accept' in u or 'glg.it' in u]
+                
+                if glg_urls:
+                    details['project_url'] = glg_urls[0]
+                    # Try to extract project ID from GLG URL
+                    project_id_match = re.search(r'/projects?/([^/?]+)', glg_urls[0])
+                    if project_id_match:
+                        details['project_id'] = project_id_match.group(1)
+                elif urls:
+                    # Filter out image/tracking URLs
+                    valid_urls = [u for u in urls if not any(x in u.lower() for x in 
+                        ['static-crm', '/images/', '.png', '.jpg', '.gif', 'wf/open', 'url2375'])]
+                    if valid_urls:
+                        details['project_url'] = valid_urls[0]
+                        project_id_match = re.search(r'/projects?/([^/?]+)', valid_urls[0])
+                        if project_id_match:
+                            details['project_id'] = project_id_match.group(1)
+                    elif urls:
+                        details['project_url'] = urls[0]
             
             # Get project description (first paragraph)
             paragraphs = body_original.split('\n\n')

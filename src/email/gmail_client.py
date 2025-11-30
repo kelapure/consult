@@ -40,7 +40,7 @@ class GmailClient:
         self.processed_emails_file = 'processed_emails.json'
         self.processed_emails = self._load_processed_emails()
         self.h2t = html2text.HTML2Text()
-        self.h2t.ignore_links = True
+        self.h2t.ignore_links = False  # Preserve links for URL extraction
         logger.info(f"Gmail client initialized for {self.email}")
     
     def _load_processed_emails(self) -> Set[str]:
@@ -256,8 +256,8 @@ class GmailClient:
 
             start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y/%m/%d')
 
-            # Search for emails from glgroup.com
-            query = f'after:{start_date} from:glgroup.com'
+            # Search for emails from consultation platforms (GLG, Guidepoint)
+            query = f'after:{start_date} (from:glgroup.com OR from:guidepointglobal.com OR from:guidepoint.com)'
             
             result = self.service.users().messages().list(
                 userId='me',

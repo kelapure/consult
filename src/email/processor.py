@@ -25,6 +25,64 @@ class EmailProcessor:
         self.memory_store = memory_store or MemoryStore()
         logger.info("Email processor initialized")
     
+    async def list_recent_emails(self, days_back: int = 14) -> List[Dict[str, Any]]:
+        """
+        List recent consultation emails without processing them.
+        
+        This method returns raw email data for the agent to analyze and decide on.
+        
+        Args:
+            days_back: Days to look back for emails
+            
+        Returns:
+            List of email dictionaries with basic info and body text
+        """
+        # Authenticate
+        if not self.gmail.authenticate():
+            logger.error("Gmail authentication failed")
+            return []
+        
+        # Search for emails
+        emails = self.gmail.search_consultation_emails(days_back)
+        if not emails:
+            logger.info("No consultation emails found")
+            return []
+        
+        # Enrich each email with platform detection
+        result = []
+        for email in emails:
+            email_id = email.get('id')
+            
+            # Skip already processed emails
+            if self.memory_store.is_processed(email_id):
+                logger.debug(f"Skipping already processed email: {email.get('subject')}")
+                continue
+            
+            # Detect platform
+            platform = self.platform_registry.detect_platform(email)
+            
+            # Classify email type
+            email_type = self.parser.classify_email_type(email)
+            
+            # Parse consultation details
+            consultation_details = self.parser.parse_consultation_details(email)
+            
+            result.append({
+                'id': email_id,
+                'subject': email.get('subject'),
+                'sender': email.get('sender'),
+                'sender_email': email.get('sender_email'),
+                'date': email.get('date'),
+                'platform': platform,
+                'email_type': email_type,
+                'bodyText': email.get('bodyText', ''),
+                'snippet': email.get('snippet', ''),
+                'consultation_details': consultation_details,
+            })
+        
+        logger.info(f"Found {len(result)} unprocessed consultation emails")
+        return result
+    
     async def process_emails(self, days_back: int = 14) -> List[Dict[str, Any]]:
         """
         Process consultation emails

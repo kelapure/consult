@@ -1051,6 +1051,7 @@ class BrowserAutomation:
         Returns:
             (success, action_log)
         """
+        success = False  # Initialize success status
         if not self.gemini_client:
             logger.error("Gemini client not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY.")
             return False, []
@@ -1078,6 +1079,14 @@ TASK:
         try:
             await self.start_browser(headless=False)
             await self.page.goto(url)
+            
+            # Initial navigation verification
+            page_content = await self.page.content()
+            if "Something didn't go right" in page_content:
+                logger.error("Initial navigation failed: landed on an error page.")
+                await self._capture_page_state()
+                await self.close_browser()
+                return False, [{"error": "Initial navigation failed: landed on an error page."}]
             
             # Extract and log project ID from URL
             self._extract_and_log_project_id(url)
@@ -1668,47 +1677,60 @@ TASK:
             logger.error("Claude client not configured. Set ANTHROPIC_API_KEY.")
             return False, []
 
-        # Task prompt prefix with verification and UI guidance
-        task_prefix = """IMPORTANT INSTRUCTIONS FOR FORM FILLING:
+        # Task prompt prefix with verification and UI guidance - optimized for iteration efficiency
+        task_prefix = """CRITICAL EFFICIENCY RULES - READ BEFORE ACTING:
 
-1. After each action, verify the outcome in the next screenshot.
-   - Only proceed to the next step after confirming success
+**MANDATORY: Use TAB key for navigation, NOT scrolling**
+- Press Tab to move between form fields (saves 3-5 iterations vs scroll+click)
+- Press Space to toggle checkboxes and radio buttons
+- Press Enter to submit forms
+- ONLY scroll if Tab doesn't reveal the next field after 2 attempts
 
-2. **CRITICAL - For dropdown/select elements:**
-   - DO NOT try clicking to open dropdowns - this often doesn't work
-   - INSTEAD: Click on the dropdown field, then immediately TYPE the desired option text
-   - The system will automatically select the matching option
-   - Example: To select "VP / Senior Director", click the dropdown then type "VP"
+**Form completion sequence (aim for 10-15 iterations max):**
+1. Click first visible field → type value
+2. Press Tab to next field → type/click value
+3. Repeat Tab+input until all visible fields done
+4. If more fields below, scroll ONCE then continue Tab navigation
+5. Tab to Submit button → press Enter
 
-3. For checkboxes and radio buttons:
-   - Click directly on the checkbox/radio element itself
-   - Verify the checked state in the next screenshot
+**DO NOT:**
+- Scroll after every field (wastes iterations)
+- Click fields you can Tab to
+- Take multiple attempts on one field
+- Scroll multiple times to find one field
 
-4. For text inputs:
-   - Click the field, then type the text
+**For dropdown/select elements:**
+- Click on the dropdown field, then TYPE the desired option text
+- The system will auto-select matching option
+- Example: To select "VP / Senior Director", click dropdown then type "VP"
 
-5. Keyboard shortcuts:
-   - Tab: Move to next field
-   - Space: Toggle checkboxes
-   - Enter: Submit form
+**For checkboxes and radio buttons:**
+- Click directly on the element OR press Space when focused
+- Verify checked state in next screenshot
 
-6. Be efficient - complete each field in 1-2 actions, not multiple attempts.
-
-7. **CRITICAL - Yes/No Questions:**
-   - Before clicking Yes or No, READ THE BUTTON TEXT carefully
-   - Yes buttons are typically on the LEFT side, No/Decline buttons on the RIGHT
-   - VERIFY the button coordinates hit the CORRECT button - clicking wrong can decline the project irreversibly
-   - For compliance questions asking if you can participate, you almost always want "Yes"
-   - If a button click doesn't work after 2 attempts, try clicking with slight offset or use keyboard navigation
+**CRITICAL - Yes/No Questions:**
+- READ button text carefully before clicking
+- Yes buttons typically on LEFT, No/Decline on RIGHT
+- VERIFY coordinates hit correct button - wrong click can decline irreversibly
+- For compliance questions, you almost always want "Yes"
 
 TASK:
 """
         # Combine prefix with user task
         enhanced_task = task_prefix + task + "\n\n" + verification_prompt
 
+        success = False  # Initialize for finally block
         try:
             await self.start_browser(headless=False)
             await self.page.goto(url)
+            
+            # Initial navigation verification
+            page_content = await self.page.content()
+            if "Something didn't go right" in page_content:
+                logger.error("Initial navigation failed: landed on an error page.")
+                await self._capture_page_state()
+                await self.close_browser()
+                return False, [{"error": "Initial navigation failed: landed on an error page."}]
             
             # Extract and log project ID from URL
             self._extract_and_log_project_id(url)
@@ -1897,6 +1919,551 @@ TASK:
             await self._capture_page_state()
             await self.close_browser()
             return success, self.action_log
+
+    async def process_dashboard_invitations(
+        self,
+        dashboard_url: str,
+        login_username: str,
+        login_password: str,
+        profile_context: dict,
+        max_invitations: int = 20,
+        iterations_per_invitation: int = 30
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        """
+        Process multiple invitations from a dashboard in ONE browser session.
+        
+        This method keeps the browser alive between invitations, only logging in once
+        and iterating through all visible invitations efficiently.
+        
+        Args:
+            dashboard_url: URL of the platform's invitation dashboard
+            login_username: Username for platform login
+            login_password: Password for platform login
+            profile_context: Profile data for evaluating fit and filling forms
+            max_invitations: Maximum number of invitations to process
+            iterations_per_invitation: Max iterations allowed per invitation form
+            
+        Returns:
+            Tuple of (processed_count, all_actions_log)
+        """
+        processed = 0
+        all_actions = []
+        results = []  # Track each invitation's result
+        
+        try:
+            # Start browser ONCE
+            logger.info(f"[{self.correlation_id}] Starting batch dashboard processing at {dashboard_url}")
+            await self.start_browser(headless=False)
+            await self.page.goto(dashboard_url)
+            
+            # Wait for page to load
+            await asyncio.sleep(2)
+            
+            # Handle cookie consent if present
+            cookie_accepted = await auto_accept_cookies(self.page)
+            if cookie_accepted:
+                logger.info(f"[{self.correlation_id}] Cookie consent accepted")
+            
+            # Login using Claude computer use for the login form only
+            login_task = f"""Login to the platform:
+1. Enter username: {login_username}
+2. Enter password: {login_password}
+3. Click Login/Submit button
+4. Wait for dashboard to load
+
+Use Tab key to navigate between fields efficiently.
+"""
+            login_success = await self._perform_batch_login(login_username, login_password)
+            if not login_success:
+                logger.error(f"[{self.correlation_id}] Batch login failed")
+                await self.close_browser()
+                return 0, self.action_log
+            
+            logger.info(f"[{self.correlation_id}] Login successful, starting invitation processing")
+            
+            # Wait for dashboard to fully load after login
+            await asyncio.sleep(3)
+            
+            # Get initial count of invitations
+            invitation_count = await self._get_invitation_count()
+            logger.info(f"[{self.correlation_id}] Found {invitation_count} invitations on dashboard")
+            
+            # Process invitations
+            while processed < max_invitations and processed < invitation_count:
+                logger.info(f"[{self.correlation_id}] Processing invitation {processed + 1}/{invitation_count}")
+                
+                # Click on the next invitation
+                invitation_clicked = await self._click_next_invitation()
+                if not invitation_clicked:
+                    logger.info(f"[{self.correlation_id}] No more invitations to process")
+                    break
+                
+                # Wait for invitation details to load
+                await asyncio.sleep(2)
+                
+                # Get invitation details and evaluate fit
+                invitation_details = await self._extract_invitation_details()
+                should_accept = self._evaluate_invitation_fit(invitation_details, profile_context)
+                
+                if should_accept:
+                    # Process the application form
+                    form_success, form_actions = await self._process_invitation_form(
+                        profile_context, 
+                        iterations_per_invitation
+                    )
+                    all_actions.extend(form_actions)
+                    results.append({
+                        "invitation": invitation_details.get("title", f"Invitation {processed + 1}"),
+                        "action": "accepted",
+                        "success": form_success
+                    })
+                else:
+                    # Decline the invitation
+                    decline_success = await self._decline_invitation()
+                    results.append({
+                        "invitation": invitation_details.get("title", f"Invitation {processed + 1}"),
+                        "action": "declined",
+                        "success": decline_success
+                    })
+                
+                processed += 1
+                
+                # Return to dashboard for next invitation
+                await self._return_to_dashboard(dashboard_url)
+                await asyncio.sleep(2)
+            
+            logger.success(f"[{self.correlation_id}] Batch processing complete: {processed} invitations processed")
+            
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in batch dashboard processing: {e}")
+        finally:
+            await self._capture_page_state()
+            await self.close_browser()
+        
+        # Add summary to action log
+        all_actions.append({
+            "action": "batch_summary",
+            "processed_count": processed,
+            "results": results
+        })
+        
+        return processed, all_actions
+
+    async def _perform_batch_login(self, username: str, password: str) -> bool:
+        """Perform login for batch processing using direct page interaction."""
+        try:
+            # Wait for page to be ready
+            await asyncio.sleep(2)
+            
+            # Try to find and fill email/username field (case-insensitive for name/id)
+            email_selectors = [
+                'input[name="Email"]',  # Guidepoint uses capital E
+                'input[name="email"]',
+                'input[type="email"]',
+                'input[name="username"]',
+                'input[name="Username"]',
+                'input[id*="email" i]',  # case-insensitive
+                'input[id*="user" i]',
+                'input[placeholder*="mail" i]',
+                'input[placeholder*="Email" i]',
+                'table input[type="text"]:first-of-type',  # Guidepoint table-based form
+            ]
+            
+            email_field = None
+            for selector in email_selectors:
+                try:
+                    email_field = await self.page.query_selector(selector)
+                    if email_field and await email_field.is_visible():
+                        break
+                    email_field = None
+                except:
+                    continue
+            
+            if email_field:
+                await email_field.click()
+                await asyncio.sleep(0.5)
+                await email_field.fill(username)
+                logger.info(f"[{self.correlation_id}] Entered username")
+            else:
+                logger.warning(f"[{self.correlation_id}] Could not find email field, trying keyboard navigation")
+                # Fallback: use Tab to navigate
+                await self.page.keyboard.press("Tab")
+                await asyncio.sleep(0.3)
+                await self.page.keyboard.type(username)
+            
+            # Try to find and fill password field
+            password_selectors = [
+                'input[name="Password"]',  # Guidepoint uses capital P
+                'input[name="password"]',
+                'input[type="password"]',
+                'input[id*="password" i]',
+            ]
+            
+            password_field = None
+            for selector in password_selectors:
+                try:
+                    password_field = await self.page.query_selector(selector)
+                    if password_field and await password_field.is_visible():
+                        break
+                    password_field = None
+                except:
+                    continue
+            
+            if password_field:
+                await password_field.click()
+                await asyncio.sleep(0.5)
+                await password_field.fill(password)
+                logger.info(f"[{self.correlation_id}] Entered password")
+            else:
+                logger.warning(f"[{self.correlation_id}] Could not find password field, using Tab")
+                await self.page.keyboard.press("Tab")
+                await asyncio.sleep(0.3)
+                await self.page.keyboard.type(password)
+            
+            # Try to find and click login button
+            login_selectors = [
+                'input[value="Log In"]',  # Guidepoint specific
+                'input[value*="Log"]',
+                'input[type="submit"]',
+                'button[type="submit"]',
+                'input[value*="Sign"]',
+                'button:has-text("Log")',
+                'button:has-text("Sign")',
+            ]
+            
+            login_button = None
+            for selector in login_selectors:
+                try:
+                    login_button = await self.page.query_selector(selector)
+                    if login_button and await login_button.is_visible():
+                        break
+                    login_button = None
+                except:
+                    continue
+            
+            if login_button:
+                await login_button.click()
+                logger.info(f"[{self.correlation_id}] Clicked login button")
+                await asyncio.sleep(3)  # Wait for login to complete
+                return True
+            else:
+                # Try pressing Enter as fallback
+                await self.page.keyboard.press("Enter")
+                await asyncio.sleep(3)
+                return True
+                
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Login error: {e}")
+            return False
+
+    async def _get_invitation_count(self) -> int:
+        """Get the count of invitations from the dashboard."""
+        try:
+            # Look for invitation count indicators (e.g., "Invitations (13)")
+            page_text = await self.page.content()
+            
+            import re
+            # Pattern for "Invitations (N)" or similar
+            count_patterns = [
+                r'Invitations?\s*\((\d+)\)',
+                r'(\d+)\s*Invitations?',
+                r'Projects?\s*\((\d+)\)',
+                r'(\d+)\s*pending',
+                r'Requests?\s*\((\d+)\)',  # Added for Guidepoint
+                r'(\d+)\s*Requests?',      # Added for Guidepoint
+                r'Open\s*\((\d+)\)',       # Common dashboard pattern
+            ]
+            
+            for pattern in count_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    count = int(match.group(1))
+                    logger.info(f"[{self.correlation_id}] Found invitation count: {count} (pattern: {pattern})")
+                    return count
+            
+            # Fallback: count Coleman "Complete Vetting Q&A" buttons
+            try:
+                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
+                coleman_count = 0
+                for btn in buttons:
+                    try:
+                        text = await btn.inner_text()
+                        if 'complete vetting' in text.lower():
+                            coleman_count += 1
+                    except:
+                        continue
+                if coleman_count > 0:
+                    logger.info(f"[{self.correlation_id}] Found {coleman_count} Coleman vetting buttons")
+                    return coleman_count
+            except:
+                pass
+
+            # Fallback: count invitation card elements
+            card_selectors = [
+                '.invitation-card',
+                '.project-card',
+                '[class*="invitation"]',
+                '[class*="project-item"]',
+                'tr[class*="request"]', # Guidepoint table row
+                'div[class*="request-card"]',
+            ]
+
+            for selector in card_selectors:
+                try:
+                    cards = await self.page.query_selector_all(selector)
+                    if cards and len(cards) > 0:
+                        logger.info(f"[{self.correlation_id}] Found {len(cards)} elements matching '{selector}'")
+                        return len(cards)
+                except:
+                    continue
+            
+            # If we get here, we couldn't find a count. Log debug info.
+            logger.warning(f"[{self.correlation_id}] Could not determine invitation count. Dumping page title/headers.")
+            try:
+                title = await self.page.title()
+                logger.debug(f"Page Title: {title}")
+                headers = await self.page.evaluate("""() => Array.from(document.querySelectorAll('h1, h2, h3')).map(h => h.innerText)""")
+                logger.debug(f"Headers: {headers}")
+            except Exception as e:
+                logger.debug(f"Failed to dump debug info: {e}")
+
+            return 10  # Default assumption if count not found
+            
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error getting invitation count: {e}")
+            return 10
+
+    async def _click_next_invitation(self) -> bool:
+        """Click on the next unprocessed invitation in the dashboard."""
+        try:
+            logger.info(f"[{self.correlation_id}] Attempting to click next invitation...")
+            
+            # Coleman: Check for "Complete Vetting Q&A" buttons
+            coleman_selectors = [
+                'button:has-text("Complete Vetting Q&A")',
+                'a:has-text("Complete Vetting Q&A")',
+                '[class*="btn"]:has-text("Complete Vetting")',
+                'button:has-text("Start")',
+                'a:has-text("Start")',
+                'div[class*="status-open"]', # Coleman specific status indicator?
+            ]
+
+            for selector in coleman_selectors:
+                try:
+                    elements = await self.page.query_selector_all(selector)
+                    for el in elements:
+                        if await el.is_visible():
+                            # Check if we've already processed this URL (if link) or if it looks processed
+                            # For now just click the first visible one
+                            text = await el.inner_text()
+                            logger.info(f"[{self.correlation_id}] Found Coleman button matching '{selector}': {text}")
+                            await el.click()
+                            logger.info(f"[{self.correlation_id}] Clicked Coleman button")
+                            return True
+                except Exception as e:
+                    logger.debug(f"[{self.correlation_id}] Error checking selector '{selector}': {e}")
+                    continue
+
+            # Try text-based button matching for Coleman (more aggressive)
+            try:
+                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
+                logger.debug(f"[{self.correlation_id}] Found {len(buttons)} generic buttons to check")
+                for btn in buttons:
+                    try:
+                        text = await btn.inner_text()
+                        if 'complete vetting' in text.lower() or 'start survey' in text.lower():
+                            if await btn.is_visible():
+                                logger.info(f"[{self.correlation_id}] Clicked button via text match: {text}")
+                                await btn.click()
+                                return True
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"[{self.correlation_id}] Error in generic button text check: {e}")
+
+            # Look for other platform invitation cards/links (GLG/Guidepoint)
+            invitation_selectors = [
+                'a[href*="response"]',
+                'a[href*="project"]',
+                '.invitation-card a',
+                '.project-card a',
+                '[class*="invitation"] a',
+                'tr[class*="invitation"] a',
+                'div[class*="card"] a[href*="/requests/"]',
+                'a[href*="/consultation/"]',
+            ]
+
+            for selector in invitation_selectors:
+                try:
+                    elements = await self.page.query_selector_all(selector)
+                    for el in elements:
+                        if await el.is_visible():
+                            href = await el.get_attribute('href')
+                            logger.info(f"[{self.correlation_id}] Found invitation link matching '{selector}': {href}")
+                            await el.click()
+                            return True
+                except:
+                    continue
+
+            logger.warning(f"[{self.correlation_id}] Could not find ANY invitation to click. Dumping body text snippet.")
+            try:
+                body_text = await self.page.inner_text('body')
+                logger.debug(f"Body text snippet: {body_text[:500]}")
+            except:
+                pass
+                
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error clicking invitation: {e}")
+            return False
+
+    async def _extract_invitation_details(self) -> Dict[str, Any]:
+        """Extract details from the current invitation page."""
+        try:
+            title = await self.page.title()
+            url = self.page.url
+            
+            # Try to get main content text
+            content = ""
+            try:
+                main_content = await self.page.query_selector('main, .content, .project-details, article')
+                if main_content:
+                    content = await main_content.inner_text()
+            except:
+                content = await self.page.inner_text('body')
+            
+            return {
+                "title": title,
+                "url": url,
+                "content": content[:2000],  # Limit content length
+            }
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error extracting invitation details: {e}")
+            return {"title": "Unknown", "url": "", "content": ""}
+
+    def _evaluate_invitation_fit(self, invitation: Dict[str, Any], profile: dict) -> bool:
+        """Evaluate if an invitation is a good fit based on profile."""
+        content = invitation.get("content", "").lower()
+        title = invitation.get("title", "").lower()
+        url = invitation.get("url", "").lower()
+
+        # For Coleman/VISASQ dashboard batch processing - accept all visible invitations
+        # These are already pre-filtered by the platform to be relevant to the expert
+        if "coleman" in url or "visasq" in url or "expert" in title.lower():
+            logger.info(f"[{self.correlation_id}] Coleman/VISASQ invitation detected - accepting")
+            return True
+
+        # Keywords that indicate good fit
+        good_fit_keywords = [
+            "ai", "artificial intelligence", "machine learning", "ml",
+            "llm", "large language model", "generative", "gpt", "claude",
+            "cloud", "gcp", "aws", "azure", "kubernetes", "docker",
+            "enterprise", "software", "architecture", "microservices",
+            "application modernization", "digital transformation",
+            "python", "java", "api", "saas", "platform",
+            "data center", "infrastructure", "devops",
+            "google", "amazon", "microsoft", "anthropic", "openai",
+            "tpu", "asic", "chip", "semiconductor", "security", "broadcom"
+        ]
+
+        # Keywords that indicate poor fit
+        poor_fit_keywords = [
+            "medical device", "pharmaceutical manufacturing", "clinical trial",
+            "supply chain logistics", "retail operations",
+            "financial trading", "derivatives", "hedge fund",
+            "real estate appraisal", "property management",
+            "oil and gas drilling", "mining operations",
+            "food processing", "agriculture",
+        ]
+
+        # Count matches
+        good_matches = sum(1 for kw in good_fit_keywords if kw in content or kw in title)
+        poor_matches = sum(1 for kw in poor_fit_keywords if kw in content or kw in title)
+
+        # Accept if more good matches than poor matches, or if it's a survey/paid opportunity
+        if "survey" in content or "paid" in content:
+            return True
+
+        # If content is mostly empty (batch processing issue), default to accept
+        if len(content.strip()) < 50 and len(title.strip()) < 20:
+            logger.info(f"[{self.correlation_id}] Minimal content detected - accepting by default")
+            return True
+
+        return good_matches > poor_matches or good_matches >= 2
+
+    async def _process_invitation_form(
+        self, 
+        profile_context: dict,
+        max_iterations: int
+    ) -> Tuple[bool, List[Dict[str, Any]]]:
+        """Process the invitation form using Claude computer use."""
+        # Generate form filling task
+        form_task = f"""Complete this consultation application form:
+
+Profile Context:
+- Name: {profile_context.get('name', 'Rohit Kelapure')}
+- Company: {profile_context.get('company', '8090 Solutions Inc.')}
+- Title: {profile_context.get('role', 'Principal Architect')}
+- Expertise: AI/ML, Cloud Computing, Enterprise Architecture, Application Modernization
+
+Fill all required fields and submit the form.
+Use Tab key to navigate between fields efficiently.
+Click checkboxes for relevant expertise areas.
+For text areas, provide clear, concise responses.
+Submit when all fields are complete.
+"""
+        
+        # Use existing claude_computer_use method for form filling
+        # But we're already on the page, so we just need to fill the form
+        success, actions = await self.claude_computer_use(
+            task=form_task,
+            url=self.page.url,
+            max_iterations=max_iterations,
+            verification_prompt="Verify form was submitted successfully."
+        )
+        
+        return success, actions
+
+    async def _decline_invitation(self) -> bool:
+        """Decline the current invitation."""
+        try:
+            decline_selectors = [
+                'button:has-text("Decline")',
+                'a:has-text("Decline")',
+                'input[value*="Decline"]',
+                'button[class*="decline"]',
+                '.decline-button',
+            ]
+            
+            for selector in decline_selectors:
+                try:
+                    decline_btn = await self.page.query_selector(selector)
+                    if decline_btn:
+                        await decline_btn.click()
+                        logger.info(f"[{self.correlation_id}] Clicked decline button")
+                        await asyncio.sleep(2)
+                        return True
+                except:
+                    continue
+            
+            logger.warning(f"[{self.correlation_id}] Could not find decline button")
+            return False
+            
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error declining invitation: {e}")
+            return False
+
+    async def _return_to_dashboard(self, dashboard_url: str) -> bool:
+        """Navigate back to the dashboard."""
+        try:
+            await self.page.goto(dashboard_url)
+            await asyncio.sleep(2)
+            logger.info(f"[{self.correlation_id}] Returned to dashboard")
+            return True
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error returning to dashboard: {e}")
+            return False
 
 
 async def submit_platform_application(

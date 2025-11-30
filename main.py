@@ -5,6 +5,7 @@ import asyncio
 import os
 import sys
 import argparse
+import json
 from loguru import logger
 from dotenv import load_dotenv
 
@@ -36,6 +37,7 @@ async def main():
     parser.add_argument('--view-runs', type=int, metavar='COUNT', help='View last N runs (default: 10)')
     parser.add_argument('--headless', action='store_true', help='Run browser in headless mode (no UI)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (save screenshots, verbose logging)')
+    parser.add_argument('--platform', type=str, choices=['glg', 'guidepoint', 'coleman'], help='Focus on a specific platform (glg, guidepoint, or coleman)')
     args = parser.parse_args()
 
     # Configure environment based on flags
@@ -80,8 +82,9 @@ async def main():
             return 0
 
         # Run automation via Agent SDK
-        logger.info(f"Starting consultation automation (processing last {args.days} days)")
-        result = await run_consult_agent(days_back=args.days)
+        platform_msg = f" (focusing on {args.platform.upper()})" if args.platform else ""
+        logger.info(f"Starting consultation automation (processing last {args.days} days){platform_msg}")
+        result = await run_consult_agent(days_back=args.days, platform_filter=args.platform)
 
         if result:
             logger.success(f"Processed {result.get('emails_processed', 0)} emails")
