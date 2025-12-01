@@ -1549,7 +1549,10 @@ TASK:
                     elif not can_recover:
                         logger.error(f"[{self.correlation_id}] {error_details} - stopping automation")
                         break
-                    # If can_recover=True but not using Claude fallback, continue to next iteration
+                    else:
+                        # can_recover=True but not using Claude fallback, continue to next iteration
+                        logger.info(f"[{self.correlation_id}] Recovery possible, continuing to next iteration")
+                        continue
 
                 # CRITICAL: Append model's response to conversation history FIRST
                 # This is required so function responses can be matched to function calls
