@@ -203,7 +203,7 @@ async def dismiss_all_coleman_dialogs(page: Page, max_iterations: int = 3) -> Di
 
 async def navigate_to_coleman_opportunity(
     page: Page,
-    index: int = 0,
+    opportunity_index: int = 0,
     correlation_id: str = "N/A"
 ) -> bool:
     """
@@ -213,7 +213,7 @@ async def navigate_to_coleman_opportunity(
     
     Args:
         page: Playwright page object
-        index: Index of the opportunity to navigate to (0-based)
+        opportunity_index: Index of the opportunity to navigate to (0-based)
         correlation_id: Optional ID for logging context
         
     Returns:

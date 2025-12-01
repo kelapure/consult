@@ -7,8 +7,11 @@ This module provides CORE (platform-agnostic) capabilities:
 - Project ID extraction from URLs
 
 Platform-specific patterns (success indicators, dialog handling, etc.)
-should be passed in via function parameters or implemented in the
-respective platform modules (e.g., src/platforms/glg_platform.py).
+should be passed in via the platform_config parameter or implemented in the
+respective platform modules (src/platforms/).
+
+IMPORTANT: This module must remain platform-agnostic. No platform-specific
+code, imports, or references should be added here.
 """
 
 import os
@@ -35,15 +38,25 @@ from src.browser.cookie_detection import auto_accept_cookies, detect_cookie_bann
 from src.browser.sanitize import sanitize_credentials, mask_password_in_logs
 
 
-def validate_browser_credentials(platform_name: str, username: str, password: str) -> Dict[str, Any]:
-    """Validate credentials before starting browser automation."""
-
+def validate_browser_credentials(
+    platform_name: str, 
+    username: str, 
+    password: str,
+    platform_config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Validate credentials before starting browser automation.
+    
+    Args:
+        platform_name: Name of the platform
+        username: Username/email for login
+        password: Password for login
+        platform_config: Platform configuration dict that may contain 'auth_type'
+    """
     if not platform_name:
         return {"valid": False, "error": "Platform name is required"}
 
-    # Check for Google OAuth platforms
-    google_oauth_platforms = ["office_hours"]
-    if platform_name.lower() in google_oauth_platforms:
+    # Check if platform uses OAuth (from platform_config)
+    if platform_config and platform_config.get("auth_type") == "google_oauth":
         return {"valid": True, "auth_type": "google_oauth"}
 
     # Credential-based platforms need username/password
@@ -129,7 +142,7 @@ def extract_project_id_from_url(url: str) -> Optional[str]:
     Platform-specific patterns can be added by platforms.
     
     Supports patterns:
-    - cpid=123456 (GLG-style)
+    - cpid=123456
     - project_id=123456
     - /projects/123456
     - /p/123456
@@ -335,6 +348,95 @@ def _sanitize_action_log(action_log: List[Dict[str, Any]]) -> List[Dict[str, Any
         sanitized.append(entry_copy)
     
     return sanitized
+
+
+# =============================================================================
+# SMART ELEMENT CLICK - Reusable helper for robust button/element clicking
+# =============================================================================
+
+async def smart_element_click(
+    page: Page,
+    strategies: List[Dict[str, Any]],
+    correlation_id: str = "N/A",
+    timeout: int = 5000
+) -> bool:
+    """
+    Smart element click with multiple fallback strategies.
+    
+    This is a reusable helper function that platforms can use for robust
+    button detection and clicking. It tries multiple strategies in order:
+    CSS selectors, text-based selectors, and XPath.
+    
+    Args:
+        page: Playwright page object
+        strategies: List of strategy dicts, each containing:
+            - "type": "css" | "text" | "xpath"
+            - "selector": The selector string
+            - "description": Optional description for logging
+        correlation_id: Optional ID for logging context
+        timeout: Timeout in ms for each strategy attempt
+        
+    Returns:
+        True if element was found and clicked, False otherwise
+        
+    Example:
+        strategies = [
+            {"type": "css", "selector": "button.submit-btn", "description": "Submit button by class"},
+            {"type": "text", "selector": "button:has-text('Submit')", "description": "Submit button by text"},
+            {"type": "xpath", "selector": "//button[contains(text(), 'Submit')]", "description": "Submit via XPath"},
+        ]
+        success = await smart_element_click(page, strategies, correlation_id="abc123")
+    """
+    for strategy in strategies:
+        strategy_type = strategy.get("type", "css")
+        selector = strategy.get("selector", "")
+        description = strategy.get("description", selector)
+        
+        if not selector:
+            continue
+            
+        try:
+            element = None
+            
+            if strategy_type == "css":
+                # Standard CSS selector
+                element = await page.query_selector(selector)
+                
+            elif strategy_type == "text":
+                # Playwright text selector (e.g., "button:has-text('Submit')")
+                try:
+                    locator = page.locator(selector)
+                    if await locator.count() > 0:
+                        element = await locator.first.element_handle()
+                except Exception:
+                    # Fallback: try as regular CSS selector
+                    element = await page.query_selector(selector)
+                    
+            elif strategy_type == "xpath":
+                # XPath selector
+                try:
+                    locator = page.locator(f"xpath={selector}")
+                    if await locator.count() > 0:
+                        element = await locator.first.element_handle()
+                except Exception:
+                    pass
+            
+            if element:
+                # Check if element is visible
+                is_visible = await element.is_visible()
+                if is_visible:
+                    await element.click(timeout=timeout)
+                    logger.info(f"[{correlation_id}] smart_element_click succeeded: {description}")
+                    return True
+                else:
+                    logger.debug(f"[{correlation_id}] Element found but not visible: {description}")
+                    
+        except Exception as e:
+            logger.debug(f"[{correlation_id}] smart_element_click strategy failed ({strategy_type}): {description} - {e}")
+            continue
+    
+    logger.warning(f"[{correlation_id}] smart_element_click: All strategies exhausted, no element clicked")
+    return False
 
 
 class BrowserAutomation:
@@ -1389,7 +1491,7 @@ class BrowserAutomation:
 
         # Enhanced intelligent termination for agentic loop
         if platform_config and platform_config.get("enable_intelligent_termination"):
-            logger.info("GLG: Using enhanced success detection patterns for intelligent termination")
+            logger.info("Using enhanced success detection patterns for intelligent termination")
         if not self.gemini_client:
             logger.error("Gemini client not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY.")
             return False, []
@@ -2542,25 +2644,32 @@ Use Tab key to navigate between fields efficiently.
         return processed, all_actions
 
     async def _perform_batch_login(self, username: str, password: str) -> bool:
-        """Perform login for batch processing using enhanced platform-specific methods."""
+        """Perform login for batch processing using platform-specific handlers from config."""
         try:
             # Validate credentials before attempting login
             platform_name = getattr(self, 'platform', 'unknown')
-            validation_result = validate_browser_credentials(platform_name, username, password)
+            validation_result = validate_browser_credentials(
+                platform_name, username, password, self.platform_config
+            )
 
             if not validation_result["valid"]:
                 logger.error(f"[{self.correlation_id}] Credential validation failed: {validation_result['error']}")
-                # Take screenshot for debugging
                 await self._capture_page_state()
                 return False
 
             logger.info(f"[{self.correlation_id}] Credentials validated for {platform_name} ({validation_result['auth_type']})")
 
-            # Phase 1: Use enhanced platform-specific login for Guidepoint
-            if platform_name.lower() == 'guidepoint':
-                return await self._enhanced_guidepoint_login(username, password)
+            # Use platform-specific login handler if provided via config
+            login_handler = self.platform_config.get("login_handler")
+            if login_handler and callable(login_handler):
+                logger.info(f"[{self.correlation_id}] Using platform-specific login handler")
+                result = await login_handler(self.page, username, password)
+                # Handle both dict and bool return types
+                if isinstance(result, dict):
+                    return result.get("success", False)
+                return bool(result)
 
-            # Fallback to generic login for other platforms
+            # Fallback to generic login
             return await self._generic_batch_login(username, password)
 
         except Exception as e:
@@ -2568,46 +2677,24 @@ Use Tab key to navigate between fields efficiently.
             await self._capture_page_state()
             return False
 
-    async def _enhanced_guidepoint_login(self, username: str, password: str) -> bool:
-        """Enhanced Guidepoint login using smart element detection."""
-        try:
-            # Import here to avoid circular imports
-            from src.platforms.guidepoint_platform import enhanced_guidepoint_dashboard_login
-
-            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint login method")
-
-            result = await enhanced_guidepoint_dashboard_login(self.page, username, password)
-
-            if result["success"]:
-                logger.success(f"[{self.correlation_id}] ✓ Enhanced Guidepoint login completed")
-                return True
-            else:
-                logger.error(f"[{self.correlation_id}] ✗ Enhanced Guidepoint login failed: {result.get('error', 'Unknown error')}")
-                return False
-
-        except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error during enhanced Guidepoint login: {e}")
-            await self._capture_page_state()
-            return False
-
     async def _generic_batch_login(self, username: str, password: str) -> bool:
-        """Generic login method for non-Guidepoint platforms."""
+        """Generic login method for all platforms (fallback when no platform-specific handler)."""
         try:
             # Wait for page to be ready
             await asyncio.sleep(2)
 
             # Try to find and fill email/username field (case-insensitive for name/id)
             email_selectors = [
-                'input[name="Email"]',  # Guidepoint uses capital E
+                'input[name="Email"]',
                 'input[name="email"]',
                 'input[type="email"]',
                 'input[name="username"]',
                 'input[name="Username"]',
-                'input[id*="email" i]',  # case-insensitive
+                'input[id*="email" i]',
                 'input[id*="user" i]',
                 'input[placeholder*="mail" i]',
                 'input[placeholder*="Email" i]',
-                'table input[type="text"]:first-of-type',  # Guidepoint table-based form
+                'table input[type="text"]:first-of-type',
             ]
             
             email_field = None
@@ -2634,7 +2721,7 @@ Use Tab key to navigate between fields efficiently.
             
             # Try to find and fill password field
             password_selectors = [
-                'input[name="Password"]',  # Guidepoint uses capital P
+                'input[name="Password"]',
                 'input[name="password"]',
                 'input[type="password"]',
                 'input[id*="password" i]',
@@ -2663,7 +2750,7 @@ Use Tab key to navigate between fields efficiently.
             
             # Try to find and click login button
             login_selectors = [
-                'input[value="Log In"]',  # Guidepoint specific
+                'input[value="Log In"]',
                 'input[value*="Log"]',
                 'input[type="submit"]',
                 'button[type="submit"]',
@@ -2741,49 +2828,33 @@ Use Tab key to navigate between fields efficiently.
             return False
 
     async def _get_invitation_count(self) -> int:
-        """Get the count of invitations using enhanced platform-specific detection."""
+        """Get the count of invitations using platform-specific detection from config."""
         try:
-            platform_name = getattr(self, 'platform', 'unknown').lower()
+            # Use platform-specific opportunity detector if provided via config
+            opportunity_detector = self.platform_config.get("opportunity_detector")
+            if opportunity_detector and callable(opportunity_detector):
+                logger.info(f"[{self.correlation_id}] Using platform-specific opportunity detector")
+                result = await opportunity_detector(self.page)
+                # Handle both dict and int return types
+                if isinstance(result, dict):
+                    count = result.get("count", 0)
+                elif isinstance(result, int):
+                    count = result
+                else:
+                    count = 0
+                
+                if count > 0:
+                    logger.success(f"[{self.correlation_id}] ✓ Detected {count} opportunities via platform detector")
+                    return count
+                # Fallback to generic if platform detector found nothing
+                logger.info(f"[{self.correlation_id}] Platform detector found 0, trying generic")
 
-            # Phase 1: Enhanced Guidepoint opportunity detection
-            if platform_name == 'guidepoint':
-                return await self._get_guidepoint_opportunity_count()
-
-            # Generic detection for other platforms
+            # Generic detection for all platforms
             return await self._get_generic_invitation_count()
 
         except Exception as e:
             logger.error(f"[{self.correlation_id}] Error getting invitation count: {e}")
             return 10
-
-    async def _get_guidepoint_opportunity_count(self) -> int:
-        """Enhanced Guidepoint opportunity counting using smart detection."""
-        try:
-            # Import here to avoid circular imports
-            from src.platforms.guidepoint_platform import detect_guidepoint_opportunities
-
-            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint opportunity detection")
-
-            result = await detect_guidepoint_opportunities(self.page)
-
-            if result["count"] > 0:
-                logger.success(f"[{self.correlation_id}] ✓ Detected {result['count']} Guidepoint opportunities via: {result['detection_method']}")
-
-                # Log details about each opportunity for debugging
-                for i, opportunity in enumerate(result["opportunities"]):
-                    logger.debug(f"[{self.correlation_id}] Opportunity {i+1}: visible={opportunity['visible']}")
-
-                return result["count"]
-            else:
-                logger.warning(f"[{self.correlation_id}] ✗ No Guidepoint opportunities detected using smart detection")
-
-                # Fallback to generic detection for Guidepoint
-                return await self._get_generic_invitation_count()
-
-        except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error in enhanced Guidepoint opportunity detection: {e}")
-            # Fallback to generic detection
-            return await self._get_generic_invitation_count()
 
     async def _get_generic_invitation_count(self) -> int:
         """Generic invitation counting for all platforms."""
@@ -2798,9 +2869,9 @@ Use Tab key to navigate between fields efficiently.
                 r'(\d+)\s*Invitations?',
                 r'Projects?\s*\((\d+)\)',
                 r'(\d+)\s*pending',
-                r'Requests?\s*\((\d+)\)',  # Added for Guidepoint
-                r'(\d+)\s*Requests?',      # Added for Guidepoint
-                r'Open\s*\((\d+)\)',       # Common dashboard pattern
+                r'Requests?\s*\((\d+)\)',
+                r'(\d+)\s*Requests?',
+                r'Open\s*\((\d+)\)',
             ]
 
             for pattern in count_patterns:
@@ -2810,20 +2881,21 @@ Use Tab key to navigate between fields efficiently.
                     logger.info(f"[{self.correlation_id}] Found invitation count: {count} (pattern: {pattern})")
                     return count
 
-            # Fallback: count Coleman "Complete Vetting Q&A" buttons
+            # Fallback: count actionable buttons (vetting, survey, etc.)
             try:
                 buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
-                coleman_count = 0
+                actionable_count = 0
                 for btn in buttons:
                     try:
                         text = await btn.inner_text()
-                        if 'complete vetting' in text.lower():
-                            coleman_count += 1
+                        # Generic patterns for actionable items
+                        if any(kw in text.lower() for kw in ['complete', 'vetting', 'start', 'respond', 'apply']):
+                            actionable_count += 1
                     except:
                         continue
-                if coleman_count > 0:
-                    logger.info(f"[{self.correlation_id}] Found {coleman_count} Coleman vetting buttons")
-                    return coleman_count
+                if actionable_count > 0:
+                    logger.info(f"[{self.correlation_id}] Found {actionable_count} actionable buttons")
+                    return actionable_count
             except:
                 pass
 
@@ -2833,7 +2905,7 @@ Use Tab key to navigate between fields efficiently.
                 '.project-card',
                 '[class*="invitation"]',
                 '[class*="project-item"]',
-                'tr[class*="request"]', # Guidepoint table row
+                'tr[class*="request"]',
                 'div[class*="request-card"]',
             ]
 
@@ -3467,110 +3539,39 @@ Use Tab key to navigate between fields efficiently.
         return result
 
     async def _click_next_invitation(self) -> bool:
-        """Click on the next unprocessed invitation using enhanced platform-specific navigation."""
+        """Click on the next unprocessed invitation using platform-specific navigation from config."""
         try:
-            logger.info(f"[{self.correlation_id}] Attempting to click next invitation with enhanced navigation...")
+            logger.info(f"[{self.correlation_id}] Attempting to click next invitation...")
 
-            platform_name = getattr(self, 'platform', 'unknown').lower()
+            # Use platform-specific opportunity navigator if provided via config
+            opportunity_navigator = self.platform_config.get("opportunity_navigator")
+            if opportunity_navigator and callable(opportunity_navigator):
+                logger.info(f"[{self.correlation_id}] Using platform-specific opportunity navigator")
+                result = await opportunity_navigator(self.page, opportunity_index=0)
+                # Handle both dict and bool return types
+                if isinstance(result, dict):
+                    if result.get("success"):
+                        logger.success(f"[{self.correlation_id}] ✓ Platform navigation successful")
+                        return True
+                    else:
+                        logger.warning(f"[{self.correlation_id}] Platform navigator returned failure: {result.get('error', 'Unknown')}")
+                        # Fall through to generic navigation
+                elif result:
+                    return True
 
-            # Phase 1: Enhanced Guidepoint navigation
-            if platform_name == 'guidepoint':
-                return await self._click_guidepoint_opportunity()
-
-            # Coleman: Check for "Complete Vetting Q&A" buttons
-            elif platform_name == 'coleman':
-                return await self._click_coleman_invitation()
-
-            # Fallback to generic navigation for other platforms
-            else:
-                return await self._click_generic_invitation()
+            # Fallback to generic navigation for all platforms
+            return await self._click_generic_invitation()
 
         except Exception as e:
             logger.error(f"[{self.correlation_id}] Error clicking invitation: {e}")
             return False
 
-    async def _click_guidepoint_opportunity(self) -> bool:
-        """Enhanced Guidepoint opportunity navigation using smart element detection."""
-        try:
-            # Import here to avoid circular imports
-            from src.platforms.guidepoint_platform import navigate_to_opportunity_application
-
-            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint navigation for 'Become an Advisor' buttons")
-
-            # Use the enhanced navigation method from Guidepoint platform
-            result = await navigate_to_opportunity_application(self.page, opportunity_index=0)
-
-            if result["success"]:
-                logger.success(f"[{self.correlation_id}] ✓ Guidepoint opportunity navigation successful via: {result['navigation_method']}")
-                logger.info(f"[{self.correlation_id}] Detected {result['opportunities_detected']} total opportunities")
-                return True
-            else:
-                logger.error(f"[{self.correlation_id}] ✗ Guidepoint opportunity navigation failed: {result.get('error', 'Unknown error')}")
-                logger.info(f"[{self.correlation_id}] Detected {result['opportunities_detected']} opportunities on dashboard")
-
-                # Capture page state for debugging
-                await self._capture_page_state()
-                return False
-
-        except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error in enhanced Guidepoint navigation: {e}")
-            await self._capture_page_state()
-            return False
-
-    async def _click_coleman_invitation(self) -> bool:
-        """Coleman-specific invitation clicking logic."""
-        try:
-            coleman_selectors = [
-                'button:has-text("Complete Vetting Q&A")',
-                'a:has-text("Complete Vetting Q&A")',
-                '[class*="btn"]:has-text("Complete Vetting")',
-                'button:has-text("Start")',
-                'a:has-text("Start")',
-                'div[class*="status-open"]',
-            ]
-
-            for selector in coleman_selectors:
-                try:
-                    elements = await self.page.query_selector_all(selector)
-                    for el in elements:
-                        if await el.is_visible():
-                            text = await el.inner_text()
-                            logger.info(f"[{self.correlation_id}] Found Coleman button matching '{selector}': {text}")
-                            await el.click()
-                            logger.info(f"[{self.correlation_id}] Clicked Coleman button")
-                            return True
-                except Exception as e:
-                    logger.debug(f"[{self.correlation_id}] Error checking Coleman selector '{selector}': {e}")
-                    continue
-
-            # Try text-based button matching for Coleman
-            try:
-                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
-                logger.debug(f"[{self.correlation_id}] Found {len(buttons)} Coleman buttons to check")
-                for btn in buttons:
-                    try:
-                        text = await btn.inner_text()
-                        if 'complete vetting' in text.lower() or 'start survey' in text.lower():
-                            if await btn.is_visible():
-                                logger.info(f"[{self.correlation_id}] Clicked Coleman button via text match: {text}")
-                                await btn.click()
-                                return True
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"[{self.correlation_id}] Error in Coleman button text check: {e}")
-
-            return False
-
-        except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error in Coleman invitation clicking: {e}")
-            return False
-
     async def _click_generic_invitation(self) -> bool:
-        """Generic invitation clicking for non-specific platforms."""
+        """Generic invitation clicking for all platforms (fallback when no platform-specific handler)."""
         try:
-            # Look for general invitation cards/links (GLG and others)
+            # Combined selectors that work across platforms
             invitation_selectors = [
+                # Link-based selectors
                 'a[href*="response"]',
                 'a[href*="project"]',
                 '.invitation-card a',
@@ -3579,6 +3580,13 @@ Use Tab key to navigate between fields efficiently.
                 'tr[class*="invitation"] a',
                 'div[class*="card"] a[href*="/requests/"]',
                 'a[href*="/consultation/"]',
+                # Button-based selectors (vetting, survey platforms)
+                'button:has-text("Complete Vetting Q&A")',
+                'a:has-text("Complete Vetting Q&A")',
+                '[class*="btn"]:has-text("Complete Vetting")',
+                'button:has-text("Start")',
+                'a:has-text("Start")',
+                'div[class*="status-open"]',
             ]
 
             for selector in invitation_selectors:
@@ -3586,20 +3594,34 @@ Use Tab key to navigate between fields efficiently.
                     elements = await self.page.query_selector_all(selector)
                     for el in elements:
                         if await el.is_visible():
-                            href = await el.get_attribute('href')
-                            logger.info(f"[{self.correlation_id}] Found invitation link matching '{selector}': {href}")
+                            # Log what we found
+                            text = (await el.inner_text() or "").strip()
+                            href = await el.get_attribute('href') or ""
+                            logger.info(f"[{self.correlation_id}] Found invitation element: '{selector}' text='{text[:50]}' href='{href}'")
                             await el.click()
                             return True
-                except:
+                except Exception as e:
+                    logger.debug(f"[{self.correlation_id}] Selector '{selector}' failed: {e}")
                     continue
 
-            logger.warning(f"[{self.correlation_id}] Could not find ANY invitation to click. Dumping body text snippet.")
+            # Text-based button matching (fallback for vetting platforms)
             try:
-                body_text = await self.page.inner_text('body')
-                logger.debug(f"Body text snippet: {body_text[:500]}")
-            except:
-                pass
+                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
+                logger.debug(f"[{self.correlation_id}] Checking {len(buttons)} buttons for text match...")
+                for btn in buttons:
+                    try:
+                        text = await btn.inner_text()
+                        if text and ('complete vetting' in text.lower() or 'start survey' in text.lower()):
+                            if await btn.is_visible():
+                                logger.info(f"[{self.correlation_id}] Clicked button via text match: {text}")
+                                await btn.click()
+                                return True
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"[{self.correlation_id}] Text-based button search failed: {e}")
 
+            logger.warning(f"[{self.correlation_id}] Could not find ANY invitation to click")
             return False
 
         except Exception as e:
@@ -3631,15 +3653,19 @@ Use Tab key to navigate between fields efficiently.
             return {"title": "Unknown", "url": "", "content": ""}
 
     def _evaluate_invitation_fit(self, invitation: Dict[str, Any], profile: dict) -> bool:
-        """Evaluate if an invitation is a good fit based on profile."""
+        """Evaluate if an invitation is a good fit based on profile.
+        
+        Platform-specific acceptance logic should be handled via platform_config.
+        This is a generic fit evaluation based on keywords.
+        """
         content = invitation.get("content", "").lower()
         title = invitation.get("title", "").lower()
         url = invitation.get("url", "").lower()
 
-        # For Coleman/VISASQ dashboard batch processing - accept all visible invitations
-        # These are already pre-filtered by the platform to be relevant to the expert
-        if "coleman" in url or "visasq" in url or "expert" in title.lower():
-            logger.info(f"[{self.correlation_id}] Coleman/VISASQ invitation detected - accepting")
+        # Check if platform_config specifies auto-accept for dashboard invitations
+        if self.platform_config.get("auto_accept_dashboard_invitations") or \
+           self.platform_config.get("always_accept_dashboard_invitations"):
+            logger.info(f"[{self.correlation_id}] Platform configured to auto-accept - accepting")
             return True
 
         # Keywords that indicate good fit
