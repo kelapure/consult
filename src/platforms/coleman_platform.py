@@ -19,6 +19,7 @@ from playwright.async_api import Page
 
 from .base import BasePlatform
 from src.browser.cookie_detection import dismiss_dialog_by_selectors
+from src.browser.computer_use import smart_element_click
 
 
 # =============================================================================
@@ -196,6 +197,159 @@ async def dismiss_all_coleman_dialogs(page: Page, max_iterations: int = 3) -> Di
     return results
 
 
+# =============================================================================
+# COLEMAN DASHBOARD HANDLERS
+# =============================================================================
+
+async def navigate_to_coleman_opportunity(
+    page: Page,
+    index: int = 0,
+    correlation_id: str = "N/A"
+) -> bool:
+    """
+    Navigate to a specific Coleman opportunity (vetting Q&A).
+    
+    Uses smart_element_click for robust button detection.
+    
+    Args:
+        page: Playwright page object
+        index: Index of the opportunity to navigate to (0-based)
+        correlation_id: Optional ID for logging context
+        
+    Returns:
+        True if navigation succeeded, False otherwise
+    """
+    try:
+        # Coleman-specific button strategies
+        vetting_strategies = [
+            {"type": "text", "selector": 'button:has-text("Complete Vetting Q&A")', "description": "Complete Vetting button"},
+            {"type": "text", "selector": 'a:has-text("Complete Vetting Q&A")', "description": "Complete Vetting link"},
+            {"type": "css", "selector": '[class*="btn"]:has-text("Complete Vetting")', "description": "Vetting button by class"},
+            {"type": "text", "selector": 'button:has-text("Start")', "description": "Start button"},
+            {"type": "text", "selector": 'a:has-text("Start")', "description": "Start link"},
+        ]
+        
+        # Try to find all matching elements and click the one at index
+        for strategy in vetting_strategies:
+            try:
+                selector = strategy["selector"]
+                if strategy["type"] == "css":
+                    elements = await page.query_selector_all(selector)
+                else:
+                    # Use locator for text selectors
+                    locator = page.locator(selector)
+                    count = await locator.count()
+                    elements = []
+                    for i in range(count):
+                        try:
+                            el = await locator.nth(i).element_handle()
+                            if el:
+                                elements.append(el)
+                        except Exception:
+                            continue
+                
+                # Filter for visible elements
+                visible_elements = []
+                for el in elements:
+                    try:
+                        if el and await el.is_visible():
+                            visible_elements.append(el)
+                    except Exception:
+                        continue
+                
+                if visible_elements and index < len(visible_elements):
+                    await visible_elements[index].click()
+                    logger.info(f"[{correlation_id}] Coleman: Clicked vetting button {index + 1} via {strategy['description']}")
+                    await asyncio.sleep(2)
+                    return True
+                    
+            except Exception as e:
+                logger.debug(f"[{correlation_id}] Coleman navigation strategy failed: {strategy['description']} - {e}")
+                continue
+        
+        # Fallback: use smart_element_click for first opportunity
+        if index == 0:
+            clicked = await smart_element_click(page, vetting_strategies, correlation_id)
+            if clicked:
+                await asyncio.sleep(2)
+                return True
+        
+        # Last fallback: search all buttons by text
+        try:
+            buttons = await page.query_selector_all('button, a.btn, [role="button"]')
+            matching_buttons = []
+            for btn in buttons:
+                try:
+                    text = await btn.inner_text()
+                    if 'complete vetting' in text.lower() or 'start survey' in text.lower():
+                        if await btn.is_visible():
+                            matching_buttons.append(btn)
+                except Exception:
+                    continue
+            
+            if matching_buttons and index < len(matching_buttons):
+                await matching_buttons[index].click()
+                logger.info(f"[{correlation_id}] Coleman: Clicked button {index + 1} via text search fallback")
+                await asyncio.sleep(2)
+                return True
+        except Exception as e:
+            logger.debug(f"[{correlation_id}] Coleman text search fallback failed: {e}")
+        
+        logger.warning(f"[{correlation_id}] Coleman: Could not navigate to opportunity {index + 1}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"[{correlation_id}] Coleman navigation error: {e}")
+        return False
+
+
+async def detect_coleman_opportunities(
+    page: Page,
+    correlation_id: str = "N/A"
+) -> int:
+    """
+    Detect the number of Coleman vetting opportunities on the dashboard.
+    
+    Args:
+        page: Playwright page object
+        correlation_id: Optional ID for logging context
+        
+    Returns:
+        Number of opportunities detected
+    """
+    try:
+        # Count "Complete Vetting Q&A" buttons
+        buttons = await page.query_selector_all('button, a.btn, [role="button"]')
+        coleman_count = 0
+        for btn in buttons:
+            try:
+                text = await btn.inner_text()
+                if 'complete vetting' in text.lower():
+                    coleman_count += 1
+            except Exception:
+                continue
+        
+        if coleman_count > 0:
+            logger.info(f"[{correlation_id}] Coleman: Found {coleman_count} vetting opportunities")
+            return coleman_count
+        
+        # Fallback: check for project cards or to-do items
+        try:
+            cards = await page.query_selector_all('.project-card, [class*="to-do"], [class*="todo"]')
+            if cards:
+                logger.info(f"[{correlation_id}] Coleman: Found {len(cards)} project cards")
+                return len(cards)
+        except Exception:
+            pass
+        
+        logger.warning(f"[{correlation_id}] Coleman: Could not determine opportunity count")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"[{correlation_id}] Coleman opportunity detection error: {e}")
+        return 0
+
+
 def get_coleman_platform_config() -> Dict[str, Any]:
     """
     Get the platform configuration for Coleman.
@@ -213,6 +367,12 @@ def get_coleman_platform_config() -> Dict[str, Any]:
         "workflow_stages": COLEMAN_WORKFLOW_STAGES,
         "dialog_handler": dismiss_all_coleman_dialogs,
         "cookie_selectors": COLEMAN_COOKIE_SELECTORS,
+        # Platform-specific handlers for decoupled browser automation
+        "opportunity_navigator": navigate_to_coleman_opportunity,
+        "opportunity_detector": detect_coleman_opportunities,
+        # Coleman dashboard invitations are pre-filtered by the platform
+        # Always accept since they're already relevant to the expert
+        "always_accept_dashboard_invitations": True,
     }
 
 

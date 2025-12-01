@@ -19,6 +19,7 @@ from playwright.async_api import Page
 
 from .base import BasePlatform
 from src.browser.cookie_detection import dismiss_dialog_by_selectors
+from src.browser.computer_use import smart_element_click
 
 
 # =============================================================================
@@ -246,6 +247,233 @@ async def dismiss_all_guidepoint_dialogs(page: Page, max_iterations: int = 5) ->
     return results
 
 
+# =============================================================================
+# GUIDEPOINT DASHBOARD HANDLERS
+# =============================================================================
+
+async def enhanced_guidepoint_dashboard_login(
+    page: Page,
+    username: str,
+    password: str,
+    correlation_id: str = "N/A"
+) -> bool:
+    """
+    Enhanced login handler for Guidepoint dashboard.
+    
+    Uses smart_element_click for robust element detection and handles
+    Guidepoint-specific login form patterns.
+    
+    Args:
+        page: Playwright page object
+        username: Guidepoint username (email)
+        password: Guidepoint password
+        correlation_id: Optional ID for logging context
+        
+    Returns:
+        True if login succeeded, False otherwise
+    """
+    try:
+        # Wait for page to be ready
+        await asyncio.sleep(2)
+        
+        # Guidepoint uses specific field names with capital letters
+        email_strategies = [
+            {"type": "css", "selector": 'input[name="Email"]', "description": "Email field by name"},
+            {"type": "css", "selector": 'input[type="email"]', "description": "Email field by type"},
+            {"type": "css", "selector": 'input[id*="email" i]', "description": "Email field by id"},
+            {"type": "css", "selector": 'table input[type="text"]:first-of-type', "description": "Table-based email field"},
+        ]
+        
+        # Find and fill email field
+        email_filled = False
+        for strategy in email_strategies:
+            try:
+                element = await page.query_selector(strategy["selector"])
+                if element and await element.is_visible():
+                    await element.click()
+                    await asyncio.sleep(0.3)
+                    await element.fill(username)
+                    logger.info(f"[{correlation_id}] Guidepoint: Entered username via {strategy['description']}")
+                    email_filled = True
+                    break
+            except Exception as e:
+                logger.debug(f"[{correlation_id}] Email strategy failed: {strategy['description']} - {e}")
+                continue
+        
+        if not email_filled:
+            logger.warning(f"[{correlation_id}] Could not find email field")
+            return False
+        
+        # Find and fill password field
+        password_strategies = [
+            {"type": "css", "selector": 'input[name="Password"]', "description": "Password field by name"},
+            {"type": "css", "selector": 'input[type="password"]', "description": "Password field by type"},
+            {"type": "css", "selector": 'input[id*="password" i]', "description": "Password field by id"},
+        ]
+        
+        password_filled = False
+        for strategy in password_strategies:
+            try:
+                element = await page.query_selector(strategy["selector"])
+                if element and await element.is_visible():
+                    await element.click()
+                    await asyncio.sleep(0.3)
+                    await element.fill(password)
+                    logger.info(f"[{correlation_id}] Guidepoint: Entered password via {strategy['description']}")
+                    password_filled = True
+                    break
+            except Exception as e:
+                logger.debug(f"[{correlation_id}] Password strategy failed: {strategy['description']} - {e}")
+                continue
+        
+        if not password_filled:
+            logger.warning(f"[{correlation_id}] Could not find password field")
+            return False
+        
+        # Click login button using smart_element_click
+        login_strategies = [
+            {"type": "css", "selector": 'input[value="Log In"]', "description": "Guidepoint Log In button"},
+            {"type": "css", "selector": 'input[type="submit"]', "description": "Submit input"},
+            {"type": "text", "selector": 'button:has-text("Log")', "description": "Login button by text"},
+            {"type": "text", "selector": 'button:has-text("Sign")', "description": "Sign in button"},
+        ]
+        
+        login_clicked = await smart_element_click(page, login_strategies, correlation_id)
+        
+        if login_clicked:
+            await asyncio.sleep(3)  # Wait for login to complete
+            logger.info(f"[{correlation_id}] Guidepoint login completed")
+            return True
+        else:
+            # Fallback: press Enter
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(3)
+            logger.info(f"[{correlation_id}] Guidepoint login attempted via Enter key")
+            return True
+            
+    except Exception as e:
+        logger.error(f"[{correlation_id}] Guidepoint login error: {e}")
+        return False
+
+
+async def detect_guidepoint_opportunities(
+    page: Page,
+    correlation_id: str = "N/A"
+) -> int:
+    """
+    Detect the number of Guidepoint opportunities on the dashboard.
+    
+    Args:
+        page: Playwright page object
+        correlation_id: Optional ID for logging context
+        
+    Returns:
+        Number of opportunities detected
+    """
+    try:
+        import re
+        page_text = await page.content()
+        
+        # Guidepoint-specific patterns
+        count_patterns = [
+            r'Requests?\s*\((\d+)\)',
+            r'(\d+)\s*Requests?',
+            r'Open\s*\((\d+)\)',
+            r'Pending\s*\((\d+)\)',
+        ]
+        
+        for pattern in count_patterns:
+            match = re.search(pattern, page_text, re.IGNORECASE)
+            if match:
+                count = int(match.group(1))
+                logger.info(f"[{correlation_id}] Guidepoint: Found {count} opportunities (pattern: {pattern})")
+                return count
+        
+        # Fallback: count table rows with request data
+        try:
+            rows = await page.query_selector_all('tr[class*="request"], div[class*="request-card"]')
+            if rows:
+                logger.info(f"[{correlation_id}] Guidepoint: Found {len(rows)} request elements")
+                return len(rows)
+        except Exception:
+            pass
+        
+        logger.warning(f"[{correlation_id}] Guidepoint: Could not determine opportunity count")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"[{correlation_id}] Guidepoint opportunity detection error: {e}")
+        return 0
+
+
+async def navigate_to_opportunity_application(
+    page: Page,
+    index: int = 0,
+    correlation_id: str = "N/A"
+) -> bool:
+    """
+    Navigate to a specific Guidepoint opportunity for application.
+    
+    Args:
+        page: Playwright page object
+        index: Index of the opportunity to navigate to (0-based)
+        correlation_id: Optional ID for logging context
+        
+    Returns:
+        True if navigation succeeded, False otherwise
+    """
+    try:
+        # Guidepoint opportunity link strategies
+        opportunity_strategies = [
+            {"type": "css", "selector": 'a[href*="response"]', "description": "Response link"},
+            {"type": "css", "selector": 'a[href*="/requests/"]', "description": "Request link"},
+            {"type": "css", "selector": 'a[href*="/consultation/"]', "description": "Consultation link"},
+            {"type": "text", "selector": 'a:has-text("Respond")', "description": "Respond link"},
+            {"type": "text", "selector": 'a:has-text("View Request")', "description": "View Request link"},
+        ]
+        
+        # Try to find all matching elements and click the one at index
+        for strategy in opportunity_strategies:
+            try:
+                selector = strategy["selector"]
+                if strategy["type"] == "css":
+                    elements = await page.query_selector_all(selector)
+                else:
+                    locator = page.locator(selector)
+                    count = await locator.count()
+                    elements = [await locator.nth(i).element_handle() for i in range(count)]
+                
+                # Filter for visible elements
+                visible_elements = []
+                for el in elements:
+                    if el and await el.is_visible():
+                        visible_elements.append(el)
+                
+                if visible_elements and index < len(visible_elements):
+                    await visible_elements[index].click()
+                    logger.info(f"[{correlation_id}] Guidepoint: Navigated to opportunity {index + 1} via {strategy['description']}")
+                    await asyncio.sleep(2)
+                    return True
+                    
+            except Exception as e:
+                logger.debug(f"[{correlation_id}] Guidepoint navigation strategy failed: {strategy['description']} - {e}")
+                continue
+        
+        # Fallback: use smart_element_click for first opportunity
+        if index == 0:
+            clicked = await smart_element_click(page, opportunity_strategies, correlation_id)
+            if clicked:
+                await asyncio.sleep(2)
+                return True
+        
+        logger.warning(f"[{correlation_id}] Guidepoint: Could not navigate to opportunity {index + 1}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"[{correlation_id}] Guidepoint navigation error: {e}")
+        return False
+
+
 def get_guidepoint_platform_config() -> Dict[str, Any]:
     """
     Get the platform configuration for Guidepoint.
@@ -263,6 +491,10 @@ def get_guidepoint_platform_config() -> Dict[str, Any]:
         "workflow_stages": GUIDEPOINT_WORKFLOW_STAGES,
         "dialog_handler": dismiss_all_guidepoint_dialogs,
         "cookie_selectors": GUIDEPOINT_COOKIE_SELECTORS,
+        # Platform-specific handlers for decoupled browser automation
+        "login_handler": enhanced_guidepoint_dashboard_login,
+        "opportunity_detector": detect_guidepoint_opportunities,
+        "opportunity_navigator": navigate_to_opportunity_application,
     }
 
 
