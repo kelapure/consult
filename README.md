@@ -7,6 +7,7 @@ Automated consultation management system powered by Claude Agent SDK. The agent 
 - **Email Monitoring**: Scans Gmail for consultation opportunities from platforms like 
 - **AI-Powered Evaluation**: Uses Claude to analyze fit based on your profile, skills, and preferences
 - **Automated Applications**: Fills and submits application forms via Computer Use (Gemini + Claude)
+- **Platform-Level Email Management**: Archives or deletes platform-specific consultation emails (e.g., GLG, Guidepoint, Coleman, AlphaSights, Office Hours) directly from the inbox.
 - **Smart Decline Drafts**: Creates polite decline emails for low-fit opportunities
 - **Decision Tracking**: Persists all decisions with reasoning for future reference
 - **Daily Reports**: Generates reports with metrics, decisions, and platform breakdowns
@@ -122,8 +123,24 @@ consult/
 ├── config/
 │   ├── config.yaml         # Profile, skills, rates
 │   └── cp_writing_style.md # Writing style guide
+├── logs/
+│   ├── glg/...             # GLG specific logs (if any)
+│   └── runs/...            # Run specific logs
+├── scripts/
+│   ├── analyze_performance.py
+│   ├── archive_glg_sample.py
+│   ├── archive_processed_emails.py
+│   ├── debug_archive.py
+│   ├── debug_unarchive.py
+│   ├── delete_newsletter_emails.py
+│   ├── list_archived_glg.py
+│   ├── list_inbox_debug.py
+│   ├── manage_glg_emails.py
+│   ├── setup_browser_profile.py
+│   ├── unarchive_glg_emails.py
+│   └── verify_login_session.py
 ├── tests/                  # Unit, integration, E2E tests
-└── profiles/               # Profile data (JSON)
+└── profiles/               # Browser profiles (ignored by Git)
 ```
 
 ## Testing
@@ -178,7 +195,7 @@ Platforms are data providers only. They return form templates, not workflow logi
 
 - OAuth2 for Gmail (no passwords stored)
 - API keys in environment variables only
-- `.gitignore` blocks sensitive files
+- `.gitignore` blocks sensitive files, including `profiles/default/`
 - Local JSON storage for consultation tracking
 
 ## License
