@@ -17,6 +17,56 @@ logger.add("logs/consultation_json_{time}.log", rotation="1 day", retention="7 d
 # Load environment variables
 load_dotenv()
 
+
+def validate_and_export_credentials():
+    """Validate critical credentials exist and export to subprocess environment."""
+    critical_vars = [
+        'ANTHROPIC_API_KEY',
+        'GMAIL_EMAIL',
+        'GOOGLE_API_KEY'
+    ]
+
+    platform_vars = {
+        'glg': ['GLG_USERNAME', 'GLG_PASSWORD', 'GLG_LOGIN_URL', 'GLG_DASHBOARD_URL'],
+        'guidepoint': ['GUIDEPOINT_USERNAME', 'GUIDEPOINT_PASSWORD', 'GUIDEPOINT_LOGIN_URL', 'GUIDEPOINT_DASHBOARD_URL'],
+        'coleman': ['COLEMAN_USERNAME', 'COLEMAN_PASSWORD', 'COLEMAN_LOGIN_URL', 'COLEMAN_DASHBOARD_URL'],
+        'office_hours': ['OFFICE_HOURS_DASHBOARD_URL']
+    }
+
+    # Check critical variables
+    missing_vars = []
+    for var in critical_vars:
+        value = os.getenv(var)
+        if not value:
+            missing_vars.append(var)
+        else:
+            os.environ[var] = value  # Ensure subprocess inheritance
+
+    # Log credential status
+    for platform, vars_list in platform_vars.items():
+        available = []
+        missing = []
+        for var in vars_list:
+            value = os.getenv(var)
+            if value:
+                available.append(var)
+                os.environ[var] = value  # Export to subprocess
+            else:
+                missing.append(var)
+
+        if available:
+            logger.info(f"{platform.upper()} credentials: {len(available)}/{len(vars_list)} available")
+        if missing:
+            logger.warning(f"{platform.upper()} missing: {missing}")
+
+    if missing_vars:
+        logger.error(f"Critical variables missing: {missing_vars}")
+        return False
+
+    logger.info("Credentials validated and exported to subprocess environment")
+    return True
+
+
 # Custom JSON formatter for correlation_id (will be used by the serialize=True sink)
 def json_formatter(record):
     record["extra"]["correlation_id"] = record["extra"].get("correlation_id", "N/A")
@@ -30,6 +80,11 @@ from src.analytics.reporter import Reporter
 
 async def main():
     """Main entry point"""
+    # Validate and export environment variables for subprocess inheritance
+    if not validate_and_export_credentials():
+        logger.error("Environment validation failed")
+        return 1
+
     parser = argparse.ArgumentParser(description='Consultation Automation Agent')
     parser.add_argument('--days', type=int, default=14, help='Days to look back for emails')
     parser.add_argument('--report-only', action='store_true', help='Generate report only (no processing)')
@@ -86,6 +141,26 @@ async def main():
             report = await reporter.generate_daily_report(send_email=False, start_date=None, end_date=None, platform_filter=None)
             logger.info("Report generated")
             return 0
+
+        # Validate platform-specific credentials before starting agent
+        if args.platform:
+            platform = args.platform.lower()
+
+            if platform == 'office_hours':
+                if not os.getenv(f"{platform.upper()}_DASHBOARD_URL"):
+                    logger.error(f"Missing {platform.upper()}_DASHBOARD_URL for Google OAuth platform")
+                    return 1
+                logger.info(f"{platform.upper()} uses Google OAuth - dashboard URL validated")
+            else:
+                required_vars = [f"{platform.upper()}_USERNAME", f"{platform.upper()}_PASSWORD"]
+                missing = [var for var in required_vars if not os.getenv(var)]
+
+                if missing:
+                    logger.error(f"Missing credentials for {platform.upper()}: {missing}")
+                    logger.error(f"Please ensure these are set in .env file: {missing}")
+                    return 1
+
+                logger.info(f"{platform.upper()} platform credentials validated")
 
         # Run automation via Agent SDK
         platform_msg = f" (focusing on {args.platform.upper()})" if args.platform else ""

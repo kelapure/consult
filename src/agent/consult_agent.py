@@ -648,27 +648,61 @@ async def get_platform_login_info(args: Dict[str, Any]) -> Dict[str, Any]:
     ctx = agent_ctx
     if ctx is None:
         return {
-            "content": [
-                {"type": "text", "text": "Agent context not initialized"}
-            ],
+            "content": [{"type": "text", "text": "Agent context not initialized"}],
             "is_error": True,
         }
 
     platform_name = (args.get("platform") or "").lower()
 
+    # Reload environment variables explicitly
+    load_dotenv()
+
     import os
 
-    # Generic environment variable pattern for any platform
-    # E.g., GLG_LOGIN_URL, GLG_USERNAME, GLG_PASSWORD, GLG_DASHBOARD_URL
     prefix = platform_name.upper()
-    
+
     login_url = os.getenv(f"{prefix}_LOGIN_URL")
     username = os.getenv(f"{prefix}_USERNAME")
     password = os.getenv(f"{prefix}_PASSWORD")
     dashboard_url = os.getenv(f"{prefix}_DASHBOARD_URL")
 
-    if not login_url or not username or not password:
-        logger.error(f"[Correlation ID: {ctx.correlation_id}] Missing login credentials for platform: {platform_name}")
+    # Enhanced debugging
+    logger.info(f"[Correlation ID: {ctx.correlation_id}] Checking {platform_name} credentials:")
+    logger.info(f"  {prefix}_USERNAME: {'✓ Found' if username else '✗ Missing'}")
+    logger.info(f"  {prefix}_PASSWORD: {'✓ Found' if password else '✗ Missing'}")
+    logger.info(f"  {prefix}_LOGIN_URL: {'✓ Found' if login_url else '✗ Missing'}")
+    logger.info(f"  {prefix}_DASHBOARD_URL: {'✓ Found' if dashboard_url else '✗ Missing'}")
+
+    # Check if Google OAuth platform
+    google_oauth_platforms = ["office_hours"]
+    is_google_oauth = platform_name in google_oauth_platforms
+
+    if is_google_oauth:
+        if not dashboard_url:
+            logger.error(f"[Correlation ID: {ctx.correlation_id}] Missing {prefix}_DASHBOARD_URL for Google OAuth platform")
+            return {
+                "content": [{"type": "text", "text": f"Missing {prefix}_DASHBOARD_URL for Google OAuth platform {platform_name}"}],
+                "is_error": True,
+            }
+        logger.info(f"[Correlation ID: {ctx.correlation_id}] Google OAuth platform {platform_name} - credentials validation passed")
+    else:
+        if not username or not password:
+            logger.error(f"[Correlation ID: {ctx.correlation_id}] Missing credentials for platform: {platform_name}")
+            logger.error(f"[Correlation ID: {ctx.correlation_id}] Expected environment variables: {prefix}_USERNAME, {prefix}_PASSWORD")
+
+            payload = {
+                "platform": platform_name,
+                "login_url": login_url,
+                "username": username,
+                "password": password,
+                "dashboard_url": dashboard_url,
+                "error": f"Missing credentials: {prefix}_USERNAME or {prefix}_PASSWORD not found in environment"
+            }
+
+            return {
+                "content": [{"type": "text", "text": json.dumps(payload)}],
+                "is_error": True,
+            }
 
     payload = {
         "platform": platform_name,
@@ -678,13 +712,10 @@ async def get_platform_login_info(args: Dict[str, Any]) -> Dict[str, Any]:
         "dashboard_url": dashboard_url,
     }
 
+    logger.info(f"[Correlation ID: {ctx.correlation_id}] Successfully retrieved {platform_name} login info")
+
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps(payload),
-            }
-        ]
+        "content": [{"type": "text", "text": json.dumps(payload)}]
     }
 
 
@@ -1310,6 +1341,26 @@ async def run_consult_agent(days_back: int, platform_filter: str = None, mode: s
     from datetime import datetime, timedelta, timedelta
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # CRITICAL: Ensure environment is loaded in agent context
+    load_dotenv()
+
+    # Debug credential availability at agent startup
+    if platform_filter:
+        platform_upper = platform_filter.upper()
+        username = os.getenv(f"{platform_upper}_USERNAME")
+        password = os.getenv(f"{platform_upper}_PASSWORD")
+        login_url = os.getenv(f"{platform_upper}_LOGIN_URL")
+        dashboard_url = os.getenv(f"{platform_upper}_DASHBOARD_URL")
+
+        logger.info(f"Agent startup - {platform_filter} credentials check:")
+        logger.info(f"  USERNAME: {'✓' if username else '✗'}")
+        logger.info(f"  PASSWORD: {'✓' if password else '✗'}")
+        logger.info(f"  LOGIN_URL: {'✓' if login_url else '✗'}")
+        logger.info(f"  DASHBOARD_URL: {'✓' if dashboard_url else '✗'}")
+
+        if not username or not password:
+            logger.error(f"CRITICAL: {platform_filter} credentials not available in agent context")
 
     memory_store = MemoryStore()
     metrics = MetricsTracker()

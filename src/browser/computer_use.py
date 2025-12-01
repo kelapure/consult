@@ -1089,7 +1089,7 @@ class BrowserAutomation:
 
     async def execute_computer_use_action(self, action_name: str, args: Dict[str, Any]) -> bool:
         """
-        Execute a Computer Use API action via Playwright
+        Execute a Computer Use API action via Playwright with form operation protection
 
         Supported actions from Gemini Computer Use:
         - click_at(x, y) - coordinates are normalized 0-1000
@@ -1105,6 +1105,20 @@ class BrowserAutomation:
         - wait_5_seconds()
         """
         try:
+            # Phase 4: Form operation protection - check before executing action
+            protection_result = await self.protect_form_operation(action_name, args)
+
+            if not protection_result["allow_action"]:
+                # Action was blocked by form protection
+                self._log_action({
+                    "action": action_name,
+                    "args": args,
+                    "protected": True,
+                    "blocked": True,
+                    "warning": protection_result["warning"],
+                    "success": False
+                })
+                return False
             # Get screen dimensions from current page
             viewport = self.page.viewport_size
             screen_width = viewport.get('width', 1440)
@@ -3199,6 +3213,255 @@ Use Tab key to navigate between fields efficiently.
         except Exception as e:
             logger.error(f"[{self.correlation_id}] Error validating Gemini response at iteration {iteration}: {e}")
             return False
+
+    # =============================================================================
+    # Phase 4: FORM OPERATION PROTECTION
+    # =============================================================================
+
+    async def detect_form_state(self) -> Dict[str, Any]:
+        """
+        Detect if forms are currently in progress to prevent destructive actions.
+
+        Returns:
+            Dict with form state information
+        """
+        result = {
+            "forms_detected": False,
+            "form_count": 0,
+            "active_forms": [],
+            "form_submission_in_progress": False,
+            "protection_required": False
+        }
+
+        try:
+            # Check for form elements on the page
+            form_selectors = [
+                'form',
+                'input[type="submit"]',
+                'button[type="submit"]',
+                '.form-container',
+                '[data-testid*="form"]'
+            ]
+
+            total_forms = 0
+            for selector in form_selectors:
+                try:
+                    elements = await self.page.query_selector_all(selector)
+                    if elements:
+                        total_forms += len(elements)
+                        for i, element in enumerate(elements):
+                            if await element.is_visible():
+                                form_info = {
+                                    "selector": selector,
+                                    "index": i,
+                                    "visible": True
+                                }
+                                result["active_forms"].append(form_info)
+                except:
+                    continue
+
+            result["form_count"] = total_forms
+            result["forms_detected"] = total_forms > 0
+
+            # Check for form submission indicators
+            submission_indicators = [
+                '.loading',
+                '.submitting',
+                '[data-testid*="submit"]',
+                'button:disabled',
+                '.spinner'
+            ]
+
+            for selector in submission_indicators:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element and await element.is_visible():
+                        result["form_submission_in_progress"] = True
+                        break
+                except:
+                    continue
+
+            # Determine if protection is required
+            result["protection_required"] = (
+                result["forms_detected"] or
+                result["form_submission_in_progress"]
+            )
+
+            logger.debug(f"[{self.correlation_id}] Form state: {result['form_count']} forms, protection_required={result['protection_required']}")
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error detecting form state: {e}")
+
+        return result
+
+    async def save_form_state(self) -> Dict[str, Any]:
+        """
+        Save current form state for recovery purposes.
+
+        Returns:
+            Dict with saved form state
+        """
+        saved_state = {
+            "success": False,
+            "forms": [],
+            "url": None,
+            "timestamp": None
+        }
+
+        try:
+            from datetime import datetime
+
+            # Save current URL
+            saved_state["url"] = self.page.url
+            saved_state["timestamp"] = datetime.now().isoformat()
+
+            # Find and save form data
+            forms = await self.page.query_selector_all('form')
+            for i, form in enumerate(forms):
+                try:
+                    form_data = {
+                        "index": i,
+                        "action": await form.get_attribute('action'),
+                        "method": await form.get_attribute('method'),
+                        "fields": []
+                    }
+
+                    # Save input field values
+                    inputs = await form.query_selector_all('input, textarea, select')
+                    for input_elem in inputs:
+                        try:
+                            field_data = {
+                                "type": await input_elem.get_attribute('type'),
+                                "name": await input_elem.get_attribute('name'),
+                                "value": await input_elem.get_attribute('value'),
+                                "checked": await input_elem.is_checked() if await input_elem.get_attribute('type') in ['checkbox', 'radio'] else None
+                            }
+                            form_data["fields"].append(field_data)
+                        except:
+                            continue
+
+                    saved_state["forms"].append(form_data)
+
+                except Exception as e:
+                    logger.debug(f"[{self.correlation_id}] Could not save form {i}: {e}")
+                    continue
+
+            saved_state["success"] = True
+            logger.debug(f"[{self.correlation_id}] ✓ Saved state for {len(saved_state['forms'])} forms")
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error saving form state: {e}")
+
+        return saved_state
+
+    def is_destructive_action(self, action_name: str, args: Dict[str, Any]) -> bool:
+        """
+        Determine if an action is destructive and should be blocked during form operations.
+
+        Args:
+            action_name: Name of the action to check
+            args: Action arguments
+
+        Returns:
+            True if action is destructive, False otherwise
+        """
+        try:
+            destructive_actions = [
+                "navigate",  # Navigation away from form
+                "go_back",   # Back navigation
+                "go_forward", # Forward navigation
+            ]
+
+            # Check for explicit destructive actions
+            if action_name in destructive_actions:
+                return True
+
+            # Check for keyboard shortcuts that could be destructive
+            if action_name == "key_combination":
+                keys = args.get("keys", "").lower()
+                destructive_key_combinations = [
+                    "f5",           # Refresh page
+                    "ctrl+f5",      # Hard refresh
+                    "ctrl+r",       # Reload
+                    "ctrl+shift+r", # Hard reload
+                    "ctrl+w",       # Close tab
+                    "ctrl+t",       # New tab
+                    "alt+left",     # Browser back
+                    "alt+right",    # Browser forward
+                ]
+
+                for destructive_combo in destructive_key_combinations:
+                    if destructive_combo in keys:
+                        return True
+
+            # CRITICAL FIX: Check for single key actions (like F5) that are destructive
+            if action_name == "key":
+                key_text = args.get("text", "").lower()
+                destructive_single_keys = [
+                    "f5",           # Refresh page - THE EXACT PROBLEM!
+                    "f12",          # Developer tools (can interfere)
+                ]
+
+                for destructive_key in destructive_single_keys:
+                    if destructive_key in key_text:
+                        return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error checking if action is destructive: {e}")
+            return False
+
+    async def protect_form_operation(self, action_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Protect form operations from destructive actions.
+
+        Args:
+            action_name: Action to potentially execute
+            args: Action arguments
+
+        Returns:
+            Dict with protection result and whether to proceed
+        """
+        result = {
+            "protected": False,
+            "allow_action": True,
+            "action_blocked": False,
+            "form_state_saved": False,
+            "warning": None
+        }
+
+        try:
+            # Check current form state
+            form_state = await self.detect_form_state()
+
+            # If forms are active and action is destructive, protect
+            if form_state["protection_required"] and self.is_destructive_action(action_name, args):
+
+                # Save form state before blocking
+                saved_state = await self.save_form_state()
+                result["form_state_saved"] = saved_state["success"]
+
+                # Block the destructive action
+                result["protected"] = True
+                result["allow_action"] = False
+                result["action_blocked"] = True
+                result["warning"] = f"Blocked destructive action '{action_name}' during form operation"
+
+                logger.warning(f"[{self.correlation_id}] 🛡️  Form protection: Blocked {action_name} - {result['warning']}")
+
+            elif form_state["protection_required"]:
+                # Non-destructive action during form operation - allow but log
+                result["protected"] = True
+                result["allow_action"] = True
+                logger.debug(f"[{self.correlation_id}] 🛡️  Form protection: Allowing {action_name} during form operation")
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in form operation protection: {e}")
+            # Default to allowing action if protection fails
+            result["allow_action"] = True
+
+        return result
 
     async def _click_next_invitation(self) -> bool:
         """Click on the next unprocessed invitation using enhanced platform-specific navigation."""
