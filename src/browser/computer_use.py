@@ -315,6 +315,95 @@ def _sanitize_action_log(action_log: List[Dict[str, Any]]) -> List[Dict[str, Any
     return sanitized
 
 
+# =============================================================================
+# SMART ELEMENT CLICK - Reusable helper for robust button/element clicking
+# =============================================================================
+
+async def smart_element_click(
+    page: Page,
+    strategies: List[Dict[str, Any]],
+    correlation_id: str = "N/A",
+    timeout: int = 5000
+) -> bool:
+    """
+    Smart element click with multiple fallback strategies.
+    
+    This is a reusable helper function that platforms can use for robust
+    button detection and clicking. It tries multiple strategies in order:
+    CSS selectors, text-based selectors, and XPath.
+    
+    Args:
+        page: Playwright page object
+        strategies: List of strategy dicts, each containing:
+            - "type": "css" | "text" | "xpath"
+            - "selector": The selector string
+            - "description": Optional description for logging
+        correlation_id: Optional ID for logging context
+        timeout: Timeout in ms for each strategy attempt
+        
+    Returns:
+        True if element was found and clicked, False otherwise
+        
+    Example:
+        strategies = [
+            {"type": "css", "selector": "button.submit-btn", "description": "Submit button by class"},
+            {"type": "text", "selector": "button:has-text('Submit')", "description": "Submit button by text"},
+            {"type": "xpath", "selector": "//button[contains(text(), 'Submit')]", "description": "Submit via XPath"},
+        ]
+        success = await smart_element_click(page, strategies, correlation_id="abc123")
+    """
+    for strategy in strategies:
+        strategy_type = strategy.get("type", "css")
+        selector = strategy.get("selector", "")
+        description = strategy.get("description", selector)
+        
+        if not selector:
+            continue
+            
+        try:
+            element = None
+            
+            if strategy_type == "css":
+                # Standard CSS selector
+                element = await page.query_selector(selector)
+                
+            elif strategy_type == "text":
+                # Playwright text selector (e.g., "button:has-text('Submit')")
+                try:
+                    locator = page.locator(selector)
+                    if await locator.count() > 0:
+                        element = await locator.first.element_handle()
+                except Exception:
+                    # Fallback: try as regular CSS selector
+                    element = await page.query_selector(selector)
+                    
+            elif strategy_type == "xpath":
+                # XPath selector
+                try:
+                    locator = page.locator(f"xpath={selector}")
+                    if await locator.count() > 0:
+                        element = await locator.first.element_handle()
+                except Exception:
+                    pass
+            
+            if element:
+                # Check if element is visible
+                is_visible = await element.is_visible()
+                if is_visible:
+                    await element.click(timeout=timeout)
+                    logger.info(f"[{correlation_id}] smart_element_click succeeded: {description}")
+                    return True
+                else:
+                    logger.debug(f"[{correlation_id}] Element found but not visible: {description}")
+                    
+        except Exception as e:
+            logger.debug(f"[{correlation_id}] smart_element_click strategy failed ({strategy_type}): {description} - {e}")
+            continue
+    
+    logger.warning(f"[{correlation_id}] smart_element_click: All strategies exhausted, no element clicked")
+    return False
+
+
 class BrowserAutomation:
     """Browser automation using AI computer-use capabilities.
     
@@ -2384,8 +2473,32 @@ Use Tab key to navigate between fields efficiently.
         return processed, all_actions
 
     async def _perform_batch_login(self, username: str, password: str) -> bool:
-        """Perform login for batch processing using direct page interaction."""
+        """Perform login for batch processing using direct page interaction.
+        
+        This method now supports platform-specific login handlers via platform_config:
+        - If auth_type == "google_oauth", skips username/password login (assumes browser profile)
+        - If login_handler is provided, delegates to the platform-specific handler
+        - Otherwise, falls back to generic login form detection
+        """
         try:
+            # Check if platform uses OAuth (no username/password needed)
+            auth_type = self.platform_config.get("auth_type", "")
+            if auth_type == "google_oauth":
+                logger.info(f"[{self.correlation_id}] Platform uses Google OAuth - skipping credential login")
+                # For OAuth platforms, we assume the browser profile has the session
+                # Just wait for the dashboard to be ready
+                await asyncio.sleep(2)
+                return True
+            
+            # Check if platform provides a custom login handler
+            login_handler = self.platform_config.get("login_handler")
+            if login_handler and callable(login_handler):
+                logger.info(f"[{self.correlation_id}] Using platform-specific login handler")
+                return await login_handler(self.page, username, password, self.correlation_id)
+            
+            # Fallback to generic login form detection
+            logger.info(f"[{self.correlation_id}] Using generic login form detection")
+            
             # Wait for page to be ready
             await asyncio.sleep(2)
             
@@ -2491,9 +2604,22 @@ Use Tab key to navigate between fields efficiently.
             return False
 
     async def _get_invitation_count(self) -> int:
-        """Get the count of invitations from the dashboard."""
+        """Get the count of invitations from the dashboard.
+        
+        Uses platform_config.get("opportunity_detector") if available,
+        otherwise falls back to generic detection.
+        """
         try:
-            # Look for invitation count indicators (e.g., "Invitations (13)")
+            # Check if platform provides a custom opportunity detector
+            opportunity_detector = self.platform_config.get("opportunity_detector")
+            if opportunity_detector and callable(opportunity_detector):
+                logger.info(f"[{self.correlation_id}] Using platform-specific opportunity detector")
+                count = await opportunity_detector(self.page, self.correlation_id)
+                if count > 0:
+                    return count
+                # If detector returns 0, fall through to generic detection
+            
+            # Generic detection: Look for invitation count indicators (e.g., "Invitations (13)")
             page_text = await self.page.content()
             
             import re
@@ -2503,8 +2629,8 @@ Use Tab key to navigate between fields efficiently.
                 r'(\d+)\s*Invitations?',
                 r'Projects?\s*\((\d+)\)',
                 r'(\d+)\s*pending',
-                r'Requests?\s*\((\d+)\)',  # Added for Guidepoint
-                r'(\d+)\s*Requests?',      # Added for Guidepoint
+                r'Requests?\s*\((\d+)\)',  # For Guidepoint
+                r'(\d+)\s*Requests?',      # For Guidepoint
                 r'Open\s*\((\d+)\)',       # Common dashboard pattern
             ]
             
@@ -2514,23 +2640,6 @@ Use Tab key to navigate between fields efficiently.
                     count = int(match.group(1))
                     logger.info(f"[{self.correlation_id}] Found invitation count: {count} (pattern: {pattern})")
                     return count
-            
-            # Fallback: count Coleman "Complete Vetting Q&A" buttons
-            try:
-                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
-                coleman_count = 0
-                for btn in buttons:
-                    try:
-                        text = await btn.inner_text()
-                        if 'complete vetting' in text.lower():
-                            coleman_count += 1
-                    except:
-                        continue
-                if coleman_count > 0:
-                    logger.info(f"[{self.correlation_id}] Found {coleman_count} Coleman vetting buttons")
-                    return coleman_count
-            except:
-                pass
 
             # Fallback: count invitation card elements
             card_selectors = [
@@ -2538,7 +2647,7 @@ Use Tab key to navigate between fields efficiently.
                 '.project-card',
                 '[class*="invitation"]',
                 '[class*="project-item"]',
-                'tr[class*="request"]', # Guidepoint table row
+                'tr[class*="request"]',
                 'div[class*="request-card"]',
             ]
 
@@ -2568,54 +2677,26 @@ Use Tab key to navigate between fields efficiently.
             return 10
 
     async def _click_next_invitation(self) -> bool:
-        """Click on the next unprocessed invitation in the dashboard."""
+        """Click on the next unprocessed invitation in the dashboard.
+        
+        Uses platform_config.get("opportunity_navigator") if available,
+        otherwise falls back to generic detection.
+        """
         try:
             logger.info(f"[{self.correlation_id}] Attempting to click next invitation...")
             
-            # Coleman: Check for "Complete Vetting Q&A" buttons
-            coleman_selectors = [
-                'button:has-text("Complete Vetting Q&A")',
-                'a:has-text("Complete Vetting Q&A")',
-                '[class*="btn"]:has-text("Complete Vetting")',
-                'button:has-text("Start")',
-                'a:has-text("Start")',
-                'div[class*="status-open"]', # Coleman specific status indicator?
-            ]
+            # Check if platform provides a custom opportunity navigator
+            opportunity_navigator = self.platform_config.get("opportunity_navigator")
+            if opportunity_navigator and callable(opportunity_navigator):
+                logger.info(f"[{self.correlation_id}] Using platform-specific opportunity navigator")
+                # Always use index 0 since we return to dashboard after each invitation
+                # and the next unprocessed invitation will be at the top
+                result = await opportunity_navigator(self.page, 0, self.correlation_id)
+                if result:
+                    return True
+                # If navigator returns False, fall through to generic detection
 
-            for selector in coleman_selectors:
-                try:
-                    elements = await self.page.query_selector_all(selector)
-                    for el in elements:
-                        if await el.is_visible():
-                            # Check if we've already processed this URL (if link) or if it looks processed
-                            # For now just click the first visible one
-                            text = await el.inner_text()
-                            logger.info(f"[{self.correlation_id}] Found Coleman button matching '{selector}': {text}")
-                            await el.click()
-                            logger.info(f"[{self.correlation_id}] Clicked Coleman button")
-                            return True
-                except Exception as e:
-                    logger.debug(f"[{self.correlation_id}] Error checking selector '{selector}': {e}")
-                    continue
-
-            # Try text-based button matching for Coleman (more aggressive)
-            try:
-                buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
-                logger.debug(f"[{self.correlation_id}] Found {len(buttons)} generic buttons to check")
-                for btn in buttons:
-                    try:
-                        text = await btn.inner_text()
-                        if 'complete vetting' in text.lower() or 'start survey' in text.lower():
-                            if await btn.is_visible():
-                                logger.info(f"[{self.correlation_id}] Clicked button via text match: {text}")
-                                await btn.click()
-                                return True
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"[{self.correlation_id}] Error in generic button text check: {e}")
-
-            # Look for other platform invitation cards/links (GLG/Guidepoint)
+            # Generic detection: Look for invitation cards/links
             invitation_selectors = [
                 'a[href*="response"]',
                 'a[href*="project"]',
@@ -2677,16 +2758,18 @@ Use Tab key to navigate between fields efficiently.
             return {"title": "Unknown", "url": "", "content": ""}
 
     def _evaluate_invitation_fit(self, invitation: Dict[str, Any], profile: dict) -> bool:
-        """Evaluate if an invitation is a good fit based on profile."""
+        """Evaluate if an invitation is a good fit based on profile.
+        
+        Uses platform_config.get("always_accept_dashboard_invitations") if set.
+        """
+        # Check if platform config says to always accept dashboard invitations
+        if self.platform_config.get("always_accept_dashboard_invitations", False):
+            logger.info(f"[{self.correlation_id}] Platform configured to always accept dashboard invitations")
+            return True
+        
         content = invitation.get("content", "").lower()
         title = invitation.get("title", "").lower()
         url = invitation.get("url", "").lower()
-
-        # For Coleman/VISASQ dashboard batch processing - accept all visible invitations
-        # These are already pre-filtered by the platform to be relevant to the expert
-        if "coleman" in url or "visasq" in url or "expert" in title.lower():
-            logger.info(f"[{self.correlation_id}] Coleman/VISASQ invitation detected - accepting")
-            return True
 
         # Keywords that indicate good fit
         good_fit_keywords = [
