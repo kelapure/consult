@@ -192,8 +192,8 @@ def get_office_hours_platform_config() -> Dict[str, Any]:
         "workflow_stages": OFFICE_HOURS_WORKFLOW_STAGES,
         "dialog_handler": dismiss_all_office_hours_dialogs,
         "cookie_selectors": OFFICE_HOURS_COOKIE_SELECTORS,
-        # Key difference: Google OAuth login
-        "login_type": "google_oauth",
+        # Key difference: Google OAuth login (no username/password needed)
+        "auth_type": "google_oauth",
         "uses_browser_profile": True,
     }
 
