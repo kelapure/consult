@@ -82,6 +82,15 @@ Decision policy - Profile Matching Criteria:
      You can clarify fit during the actual call. Don't decline due to missing information.
   3. Roundtable discussions or informational emails about topics in your domain (AI, cloud, etc.)
 
+**CRITICAL - NEVER DECLINE DUE TO TECHNICAL FAILURES:**
+- It is **FORBIDDEN** to decline a profile-matched opportunity because of technical, browser automation, or submission issues.
+- If you cannot hit submit, if the form is buggy, or if the "Apply" button doesn't work:
+  - DO NOT switch your decision to DECLINE.
+  - Record the decision as "ACCEPT" with a status of "FAILED SUBMISSION" or "ERROR".
+  - Log the specific technical error in `submission_details`.
+  - Leave the email in the inbox (do not archive) so it can be retried later.
+- "I couldn't submit the form" is NOT a valid reason to Decline.
+
 - For accepted consultations:
   - Proceed to apply using get_application_form_data and submit_platform_application tools.
 - For declined consultations:
@@ -327,22 +336,25 @@ Loop behavior for a run:
 
 3. After processing (for either approach):
    - Call record_consultation_decision for each processed consultation.
+   - Call archive_email to remove the processed email from the inbox (CRITICAL STEP).
    - Call finalize_run_and_report to generate a summary for this run.
 
 Completion requirements for large batches:
 - You may process 10+ consultation emails in a single run.
 - For EACH email, you MUST complete the entire workflow before moving to the next:
-  - Accept workflow: get_cp_writing_style → get_profile_summary → get_application_form_data → get_platform_login_info → submit_platform_application → record_consultation_decision → archive email
-  - Decline workflow: draft decline email → send_email_reply → record_consultation_decision → archive email
+  - Accept workflow: get_cp_writing_style → get_profile_summary → get_application_form_data → get_platform_login_info → submit_platform_application → record_consultation_decision → call archive_email tool
+  - Decline workflow: draft decline email → send_email_reply → record_consultation_decision → call archive_email tool
 - Do NOT move to the next email until you have:
   1. Received confirmation from submit_platform_application OR send_email_reply
   2. Called record_consultation_decision with complete details
-  3. Archived the email
+  3. Called archive_email tool
 - If a step fails, record the failure with record_consultation_decision, then move to the next email.
 - Process all emails in the batch before calling finalize_run_and_report.
 - Work systematically through the entire batch in one continuous session.
 
 IMPORTANT: Do NOT archive emails until AFTER you have completed the accept/decline workflow and received confirmation.
+
+CRITICAL: You MUST call the archive_email tool for EVERY email you process, regardless of platform (GLG, Guidepoint, Coleman, Office Hours). This is mandatory - failing to archive processed emails leaves them cluttering the inbox.
 
 Safety and constraints:
 - Do not access or modify accounts or data outside of the tools provided.
@@ -807,6 +819,71 @@ async def record_consultation_decision(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+@handle_tool_errors
+@tool(
+    "archive_email",
+    "Archive a consultation email after processing. This removes it from the inbox.",
+    {"email_id": str},
+)
+async def archive_email(args: Dict[str, Any]) -> Dict[str, Any]:
+    global agent_ctx
+    ctx = agent_ctx
+    if ctx is None:
+        return {
+            "content": [
+                {"type": "text", "text": "Agent context not initialized"}
+            ],
+            "is_error": True,
+        }
+
+    email_id = args.get("email_id")
+    if not email_id:
+        return {
+            "content": [
+                {"type": "text", "text": "email_id is required"}
+            ],
+            "is_error": True,
+        }
+
+    try:
+        # Check authentication
+        if not ctx.email_processor.gmail.authenticate():
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Gmail authentication failed",
+                    }
+                ],
+                "is_error": True,
+            }
+
+        ctx.email_processor.gmail.archive_email(email_id)
+        
+        # Also mark as processed if not already done
+        ctx.email_processor.gmail.mark_as_processed(email_id, "archived")
+
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Archived email {email_id}",
+                }
+            ]
+        }
+    except Exception as exc:
+        logger.error(f"[Correlation ID: {ctx.correlation_id}] archive_email failed: {exc}")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Failed to archive email: {exc}",
+                }
+            ],
+            "is_error": True,
+        }
+
+
 def _build_task_prompt(
     platform_name: str,
     project_url: str,
@@ -1124,6 +1201,65 @@ async def submit_platform_application(args: Dict[str, Any]) -> Dict[str, Any]:
 
 @handle_tool_errors
 @tool(
+    "archive_email",
+    "Archive a processed consultation email by removing it from the inbox",
+    {"email_id": str},
+)
+async def archive_email(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Archive a consultation email after processing is complete"""
+    global agent_ctx
+    ctx = agent_ctx
+    if ctx is None:
+        return {
+            "content": [
+                {"type": "text", "text": "Agent context not initialized"}
+            ],
+            "is_error": True,
+        }
+
+    email_id = args.get("email_id")
+    if not email_id:
+        return {
+            "content": [
+                {"type": "text", "text": "email_id is required"}
+            ],
+            "is_error": True,
+        }
+
+    logger.info(f"[Correlation ID: {ctx.correlation_id}] Archiving email: {email_id}")
+
+    try:
+        # Use the Gmail client from email processor to archive the email
+        ctx.email_processor.gmail.archive_email(email_id)
+
+        # Record the archiving action in metrics
+        ctx.metrics.record_email_archived()
+
+        logger.info(f"[Correlation ID: {ctx.correlation_id}] Successfully archived email: {email_id}")
+
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Successfully archived email {email_id}",
+                }
+            ]
+        }
+    except Exception as exc:
+        logger.error(f"[Correlation ID: {ctx.correlation_id}] Failed to archive email {email_id}: {exc}")
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Failed to archive email {email_id}: {exc}",
+                }
+            ],
+            "is_error": True,
+        }
+
+
+@handle_tool_errors
+@tool(
     "finalize_run_and_report",
     "Finalize metrics for this run and generate a report",
     {},
@@ -1200,6 +1336,7 @@ async def run_consult_agent(days_back: int, platform_filter: str = None, mode: s
             get_cp_writing_style,
             get_profile_summary,
             record_consultation_decision,
+            archive_email,
             finalize_run_and_report,
             get_application_form_data,
             get_platform_login_info,
@@ -1216,6 +1353,7 @@ async def run_consult_agent(days_back: int, platform_filter: str = None, mode: s
             "mcp__consult__get_cp_writing_style",
             "mcp__consult__get_profile_summary",
             "mcp__consult__record_consultation_decision",
+            "mcp__consult__archive_email",
             "mcp__consult__finalize_run_and_report",
             "mcp__consult__get_application_form_data",
             "mcp__consult__get_platform_login_info",

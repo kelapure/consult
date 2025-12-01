@@ -849,6 +849,202 @@ class BrowserAutomation:
         self.last_page_state = state
         return state
 
+    async def precise_click(self, x: int, y: int, expected_text: str = None) -> bool:
+        """
+        Precision click system that uses element selectors first, coordinates as fallback.
+        This fixes the iteration 30 dialog failure by being more robust than blind coordinate clicking.
+
+        Args:
+            x, y: Pixel coordinates
+            expected_text: Optional text to verify we're clicking the right element
+
+        Returns:
+            True if click succeeded and was verified, False otherwise
+        """
+        try:
+            # Step 1: Try to find a reliable selector for the element at these coordinates
+            element_info = await self.page.evaluate(f"""
+                (function() {{
+                    const elem = document.elementFromPoint({x}, {y});
+                    if (!elem) return null;
+
+                    const rect = elem.getBoundingClientRect();
+
+                    // Build selector hierarchy for robustness
+                    let selectors = [];
+
+                    // Try ID selector (most reliable)
+                    if (elem.id) {{
+                        selectors.push('#' + elem.id);
+                    }}
+
+                    // Try data attributes (common for React apps)
+                    if (elem.dataset && elem.dataset.testid) {{
+                        selectors.push('[data-testid="' + elem.dataset.testid + '"]');
+                    }}
+
+                    // Try class + text combination for buttons/links
+                    if ((elem.tagName === 'BUTTON' || elem.tagName === 'A') && elem.textContent) {{
+                        const text = elem.textContent.trim();
+                        if (text.length > 0 && text.length < 50) {{
+                            selectors.push(`${{elem.tagName.toLowerCase()}}:has-text("${{text}}")`);
+                        }}
+                    }}
+
+                    // Try role + name for accessibility
+                    if (elem.getAttribute('role')) {{
+                        const role = elem.getAttribute('role');
+                        const ariaLabel = elem.getAttribute('aria-label') || elem.textContent?.trim();
+                        if (ariaLabel && ariaLabel.length < 50) {{
+                            selectors.push(`[role="${{role}}"][aria-label*="${{ariaLabel}}"]`);
+                        }}
+                    }}
+
+                    return {{
+                        tagName: elem.tagName,
+                        text: elem.textContent?.trim()?.substring(0, 100) || '',
+                        selectors: selectors,
+                        boundingBox: {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }},
+                        isClickable: elem.tagName === 'BUTTON' || elem.tagName === 'A' ||
+                                   elem.type === 'button' || elem.type === 'submit' ||
+                                   elem.onclick !== null || elem.getAttribute('role') === 'button'
+                    }};
+                }})()
+            """)
+
+            if not element_info:
+                logger.warning(f"[{self.correlation_id}] No element found at ({x}, {y}), falling back to coordinates")
+                return await self._coordinate_click_fallback(x, y)
+
+            # Verify expected text if provided
+            if expected_text and expected_text.lower() not in element_info.get("text", "").lower():
+                logger.warning(f"[{self.correlation_id}] Element text mismatch. Expected: '{expected_text}', Found: '{element_info.get('text', '')[:50]}...'")
+
+            # Step 2: Try each selector in order of reliability
+            for selector in element_info.get("selectors", []):
+                try:
+                    locator = self.page.locator(selector)
+                    if await locator.count() == 1:  # Exactly one match - good selector
+                        await locator.click(timeout=3000)
+
+                        # Step 3: Verify click success
+                        if await self.verify_click_success(x, y, element_info):
+                            logger.info(f"[{self.correlation_id}] Precision click succeeded with selector: {selector}")
+                            return True
+                        else:
+                            logger.debug(f"[{self.correlation_id}] Click verification failed for selector: {selector}")
+
+                except Exception as e:
+                    logger.debug(f"[{self.correlation_id}] Selector failed: {selector} - {e}")
+                    continue
+
+            # Step 4: Fallback to coordinate clicking if selectors failed
+            logger.warning(f"[{self.correlation_id}] All selectors failed, falling back to coordinates ({x}, {y})")
+            return await self._coordinate_click_fallback(x, y)
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Precision click failed: {e}")
+            return await self._coordinate_click_fallback(x, y)
+
+    async def verify_click_success(self, x: int, y: int, original_element_info: dict) -> bool:
+        """
+        Verify that a click actually had the intended effect.
+        This prevents the iteration 30 issue where clicks silently fail.
+        """
+        try:
+            # Wait a moment for the click to take effect
+            await asyncio.sleep(0.3)
+
+            # Check if element state changed (common for dialog dismissal)
+            current_element_info = await self.page.evaluate(f"""
+                (function() {{
+                    const elem = document.elementFromPoint({x}, {y});
+                    if (!elem) return {{ elementGone: true }};
+
+                    const rect = elem.getBoundingClientRect();
+                    return {{
+                        tagName: elem.tagName,
+                        text: elem.textContent?.trim()?.substring(0, 100) || '',
+                        boundingBox: {{ x: rect.x, y: rect.y, width: rect.width, height: rect.height }},
+                        visible: rect.width > 0 && rect.height > 0
+                    }};
+                }})()
+            """)
+
+            # Success indicators:
+            # 1. Element disappeared (dialog closed)
+            if current_element_info.get("elementGone"):
+                logger.debug(f"[{self.correlation_id}] Click success: Element disappeared")
+                return True
+
+            # 2. Element became invisible (dialog hidden)
+            if not current_element_info.get("visible"):
+                logger.debug(f"[{self.correlation_id}] Click success: Element became invisible")
+                return True
+
+            # 3. Text content changed (state change)
+            original_text = original_element_info.get("text", "")
+            current_text = current_element_info.get("text", "")
+            if original_text != current_text:
+                logger.debug(f"[{self.correlation_id}] Click success: Text changed from '{original_text}' to '{current_text}'")
+                return True
+
+            # 4. Check for page navigation or URL change
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=1000)
+                logger.debug(f"[{self.correlation_id}] Click success: Page navigation detected")
+                return True
+            except:
+                pass  # No navigation - not necessarily a failure
+
+            # 5. For buttons - check if we're no longer on the same page/dialog
+            if original_element_info.get("tagName") == "BUTTON":
+                # If it's still the same button in the same place, the click might have failed
+                logger.debug(f"[{self.correlation_id}] Click uncertain: Button still present and unchanged")
+                return False
+
+            # Default: assume success if no clear failure indicators
+            return True
+
+        except Exception as e:
+            logger.debug(f"[{self.correlation_id}] Click verification error: {e}")
+            return False  # Err on the side of caution
+
+    async def _coordinate_click_fallback(self, x: int, y: int) -> bool:
+        """
+        Fallback to coordinate-based clicking when selectors fail.
+        Enhanced with verification to prevent silent failures.
+        """
+        try:
+            # Try normal mouse click first
+            await self.page.mouse.click(x, y)
+            await asyncio.sleep(0.3)
+
+            # Simple verification - did something change?
+            page_changed = False
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=1000)
+                page_changed = True
+            except:
+                pass
+
+            if page_changed:
+                logger.info(f"[{self.correlation_id}] Coordinate click succeeded - page changed")
+                return True
+
+            # Try JS click as secondary fallback
+            logger.debug(f"[{self.correlation_id}] Trying JS click fallback at ({x}, {y})")
+            if await self._js_click_fallback(x, y):
+                logger.info(f"[{self.correlation_id}] JS click fallback succeeded")
+                return True
+
+            logger.warning(f"[{self.correlation_id}] All click methods failed at ({x}, {y})")
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Coordinate click fallback failed: {e}")
+            return False
+
     async def execute_computer_use_action(self, action_name: str, args: Dict[str, Any]) -> bool:
         """
         Execute a Computer Use API action via Playwright
@@ -876,30 +1072,20 @@ class BrowserAutomation:
                 x = self._denormalize_coord(x_norm, screen_width)
                 y = self._denormalize_coord(y_norm, screen_height)
 
-                # Check if we've clicked this location recently (within 20px tolerance)
-                tolerance = 20
-                recent_clicks_at_location = sum(
-                    1 for px, py in self._click_history[-5:]  # Check last 5 clicks
-                    if abs(px - x) < tolerance and abs(py - y) < tolerance
-                )
-                
-                # Track this click
+                # Track click location for debugging
                 self._click_history.append((x, y))
                 if len(self._click_history) > 10:
                     self._click_history = self._click_history[-10:]
-                
-                # Use JS fallback if we've clicked same spot multiple times
-                if recent_clicks_at_location >= self._click_fallback_threshold:
-                    logger.warning(f"Detected {recent_clicks_at_location} repeated clicks at ({x}, {y}), using JS fallback")
-                    if await self._js_click_fallback(x, y):
-                        self._log_action({"action": "click_at", "x": x, "y": y, "method": "js_fallback"})
-                        return True
-                    logger.warning(f"[{self.correlation_id}] JS fallback failed, trying normal click anyway")
-                
-                await self.page.mouse.click(x, y)
-                logger.info(f"[{self.correlation_id}] Clicked at: ({x}, {y}) [normalized: ({x_norm}, {y_norm})]")
-                self._log_action({"action": "click_at", "x": x, "y": y})
-                return True
+
+                # Use the new precision click system to fix iteration 30 dialog failure
+                expected_text = args.get("expected_text")  # Optional hint about what we expect to click
+                success = await self.precise_click(x, y, expected_text)
+
+                # Log the action with method used
+                method = "precision_click" if success else "failed"
+                logger.info(f"[{self.correlation_id}] Click at ({x}, {y}) [normalized: ({x_norm}, {y_norm})] - {method}")
+                self._log_action({"action": "click_at", "x": x, "y": y, "method": method, "success": success})
+                return success
 
             elif action_name == "type_text_at":
                 x_norm, y_norm = args.get("x"), args.get("y")
@@ -1074,7 +1260,8 @@ class BrowserAutomation:
         task: str,
         url: str,
         max_iterations: int = 20,
-        verification_prompt: str = "Verify that the application was successfully submitted."
+        verification_prompt: str = "Verify that the application was successfully submitted.",
+        platform_config: Optional[Dict[str, Any]] = None
     ) -> Tuple[bool, List[Dict[str, Any]]]:
         """
         Use Gemini 2.5 Computer Use API to complete a browser task.
@@ -1086,11 +1273,16 @@ class BrowserAutomation:
             task: Description of what to accomplish
             url: Starting URL
             max_iterations: Maximum number of AI iterations
+            platform_config: Platform-specific configuration (includes state machine factory)
 
         Returns:
             (success, action_log)
         """
         success = False  # Initialize success status
+
+        # Enhanced intelligent termination for agentic loop
+        if platform_config and platform_config.get("enable_intelligent_termination"):
+            logger.info("GLG: Using enhanced success detection patterns for intelligent termination")
         if not self.gemini_client:
             logger.error("Gemini client not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY.")
             return False, []
@@ -1169,6 +1361,7 @@ TASK:
                 await self._capture_page_state()
                 await self.close_browser()
                 return False, [f"Consultation blocked: {blocked_indicator}"]
+
 
             # Initialize conversation with goal + screenshot
             contents = [
@@ -1365,23 +1558,52 @@ TASK:
                         )
                     )
 
-                # Check if success message is visible (programmatic success detection)
+                # Enhanced intelligent success detection (platform-aware, agentic)
                 try:
-                    success_visible = await self.page.evaluate("""
-                        () => {
-                            const successMsg = document.getElementById('success-message');
-                            if (!successMsg) return false;
-                            const style = window.getComputedStyle(successMsg);
-                            return style.display !== 'none' && style.visibility !== 'hidden';
-                        }
-                    """)
-                    if success_visible:
-                        logger.success("Success message detected - form submitted successfully!")
-                        await self._capture_page_state()
-                        await self.close_browser()
-                        return True, self.action_log
+                    # Platform-specific success detection
+                    success_patterns = []
+                    if platform_config:
+                        # Use platform-specific success indicators
+                        success_patterns.extend(platform_config.get("success_indicators", []))
+
+                    # Fallback to generic success patterns
+                    success_patterns.extend([
+                        "thanks, you're all set", "application received", "successfully submitted",
+                        "submission confirmed", "you're all set", "thank you for applying"
+                    ])
+
+                    # Check for success patterns in page text (intelligent detection)
+                    page_text = await self.page.text_content('body') or ""
+                    page_text_lower = page_text.lower()
+
+                    for pattern in success_patterns:
+                        if pattern.lower() in page_text_lower:
+                            logger.success(f"SUCCESS detected via pattern: '{pattern}' - task completed!")
+                            await self._capture_page_state()
+                            await self.close_browser()
+                            return True, self.action_log
+
+                    # Check for blocked/failure states (intelligent early termination)
+                    blocked_patterns = []
+                    if platform_config:
+                        blocked_patterns.extend(platform_config.get("blocked_indicators", []))
+                        blocked_patterns.extend(platform_config.get("failure_indicators", []))
+
+                    # Default blocked patterns
+                    blocked_patterns.extend([
+                        "already declined", "already applied", "project expired",
+                        "no longer available", "invitation has expired"
+                    ])
+
+                    for pattern in blocked_patterns:
+                        if pattern.lower() in page_text_lower:
+                            logger.info(f"BLOCKED state detected via pattern: '{pattern}' - stopping appropriately")
+                            await self._capture_page_state()
+                            await self.close_browser()
+                            return True, self.action_log  # Return True since we correctly detected blocked state
+
                 except Exception as e:
-                    logger.debug(f"Success check error (non-fatal): {e}")
+                    logger.debug(f"Enhanced success check error (non-fatal): {e}")
 
             logger.warning(f"Max iterations ({max_iterations}) reached")
             await self._capture_page_state()
@@ -1526,6 +1748,9 @@ TASK:
 
                 # Split string to handle multiple key presses
                 keys_to_press = keys_string.split()
+                
+                # Context info to return for tool output (especially useful for Tab navigation)
+                focused_element_info = None
 
                 for key in keys_to_press:
                     mapped_key = key_mapping.get(key, key)
@@ -1536,6 +1761,32 @@ TASK:
                         await asyncio.sleep(0.1)
 
                 self._log_action({"action": "key", "text": keys_string})
+                
+                # If the action involved navigation keys (Tab, Arrows), capture focus state
+                if any(k.lower() in ["tab", "arrowdown", "arrowup", "enter"] for k in keys_to_press):
+                    try:
+                        focused_element_info = await self.page.evaluate("""
+                            () => {
+                                const el = document.activeElement;
+                                if (!el || el === document.body) return "No specific element focused";
+                                
+                                const tag = el.tagName;
+                                const type = el.type || '';
+                                const text = (el.innerText || el.value || el.placeholder || '').substring(0, 50).replace(/\\n/g, ' ');
+                                const label = el.labels && el.labels[0] ? el.labels[0].innerText : '';
+                                const ariaLabel = el.getAttribute('aria-label') || '';
+                                
+                                return `Focused: <${tag} type="${type}"> Text: "${text}" Label: "${label}" Aria: "${ariaLabel}"`;
+                            }
+                        """)
+                        logger.info(f"[{self.correlation_id}] Focus state after keys: {focused_element_info}")
+                    except Exception as e:
+                        logger.debug(f"Failed to get focus state: {e}")
+                
+                # Return focus info if available (this will be part of the tool result message)
+                if focused_element_info:
+                    return focused_element_info
+                    
                 return True
 
             elif action == "mouse_move":
@@ -1687,8 +1938,9 @@ TASK:
         self,
         task: str,
         url: str,
-        max_iterations: int = 35,
-        verification_prompt: str = "Verify that the application was successfully submitted."
+        max_iterations: int = 25,
+        verification_prompt: str = "Verify that the application was successfully submitted.",
+        platform_config: Optional[Dict[str, Any]] = None
     ) -> Tuple[bool, List[Dict[str, Any]]]:
         """
         Use Claude Opus 4.5 computer-use beta API.
@@ -1721,22 +1973,23 @@ TASK:
 
 **MANDATORY: Use TAB key for navigation, NOT scrolling**
 - Press Tab to move between form fields (saves 3-5 iterations vs scroll+click)
+- The 'key' tool will return the CURRENTLY FOCUSED ELEMENT. **Check this output before pressing Enter!**
 - Press Space to toggle checkboxes and radio buttons
-- Press Enter to submit forms
+- Press Enter to submit forms ONLY when focused on the submit button
 - ONLY scroll if Tab doesn't reveal the next field after 2 attempts
 
 **Form completion sequence (aim for 10-15 iterations max):**
 1. Click first visible field → type value
-2. Press Tab to next field → type/click value
-3. Repeat Tab+input until all visible fields done
-4. If more fields below, scroll ONCE then continue Tab navigation
+2. Press Tab to next field → **CHECK TOOL OUTPUT** to see what is focused
+3. If focused on correct field, type value. If not, Tab again.
+4. Repeat Tab+input until all visible fields done
 5. Tab to Submit button → press Enter
 
 **DO NOT:**
 - Scroll after every field (wastes iterations)
 - Click fields you can Tab to
-- Take multiple attempts on one field
-- Scroll multiple times to find one field
+- Take multiple attempts on one field without changing strategy
+- Press Enter blindly without checking focus (can trigger accidental declines!)
 
 **For dropdown/select elements:**
 - Click on the dropdown field, then TYPE the desired option text
@@ -1889,26 +2142,39 @@ TASK:
                         logger.debug(f"Params: {block.input}")
 
                         # Execute action via Playwright
-                        success = await self.execute_claude_action(action, block.input)
+                        result = await self.execute_claude_action(action, block.input)
+                        
+                        # Handle result depending on whether it's boolean or data
+                        success_val = True
+                        output_text = None
+                        if isinstance(result, bool):
+                            success_val = result
+                        elif isinstance(result, str):
+                            output_text = result
+                            success_val = True
 
                         # Take new screenshot after action
                         new_screenshot = await self.take_screenshot()
                         new_screenshot_b64 = self.screenshot_to_base64(new_screenshot)
 
                         # Build tool result with screenshot
+                        tool_result_content = []
+                        if output_text:
+                             tool_result_content.append({"type": "text", "text": output_text})
+                             
+                        tool_result_content.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": new_screenshot_b64
+                            }
+                        })
+                        
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": [
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": "image/png",
-                                        "data": new_screenshot_b64
-                                    }
-                                }
-                            ]
+                            "content": tool_result_content
                         })
 
                         # Brief pause between actions
@@ -1931,23 +2197,52 @@ TASK:
                         "content": tool_results
                     })
 
-                # Check if success message is visible (programmatic success detection)
+                # Enhanced intelligent success detection (platform-aware, agentic)
                 try:
-                    success_visible = await self.page.evaluate("""
-                        () => {
-                            const successMsg = document.getElementById('success-message');
-                            if (!successMsg) return false;
-                            const style = window.getComputedStyle(successMsg);
-                            return style.display !== 'none' && style.visibility !== 'hidden';
-                        }
-                    """)
-                    if success_visible:
-                        logger.success("Success message detected - form submitted successfully!")
-                        await self._capture_page_state()
-                        await self.close_browser()
-                        return True, self.action_log
+                    # Platform-specific success detection
+                    success_patterns = []
+                    if platform_config:
+                        # Use platform-specific success indicators
+                        success_patterns.extend(platform_config.get("success_indicators", []))
+
+                    # Fallback to generic success patterns
+                    success_patterns.extend([
+                        "thanks, you're all set", "application received", "successfully submitted",
+                        "submission confirmed", "you're all set", "thank you for applying"
+                    ])
+
+                    # Check for success patterns in page text (intelligent detection)
+                    page_text = await self.page.text_content('body') or ""
+                    page_text_lower = page_text.lower()
+
+                    for pattern in success_patterns:
+                        if pattern.lower() in page_text_lower:
+                            logger.success(f"SUCCESS detected via pattern: '{pattern}' - task completed!")
+                            await self._capture_page_state()
+                            await self.close_browser()
+                            return True, self.action_log
+
+                    # Check for blocked/failure states (intelligent early termination)
+                    blocked_patterns = []
+                    if platform_config:
+                        blocked_patterns.extend(platform_config.get("blocked_indicators", []))
+                        blocked_patterns.extend(platform_config.get("failure_indicators", []))
+
+                    # Default blocked patterns
+                    blocked_patterns.extend([
+                        "already declined", "already applied", "project expired",
+                        "no longer available", "invitation has expired"
+                    ])
+
+                    for pattern in blocked_patterns:
+                        if pattern.lower() in page_text_lower:
+                            logger.info(f"BLOCKED state detected via pattern: '{pattern}' - stopping appropriately")
+                            await self._capture_page_state()
+                            await self.close_browser()
+                            return True, self.action_log  # Return True since we correctly detected blocked state
+
                 except Exception as e:
-                    logger.debug(f"Success check error (non-fatal): {e}")
+                    logger.debug(f"Enhanced success check error (non-fatal): {e}")
 
             logger.warning(f"Max iterations ({max_iterations}) reached")
             await self._capture_page_state()

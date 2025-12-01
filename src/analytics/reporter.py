@@ -258,7 +258,7 @@ class Reporter:
                     f"{i}. {decision_symbol} {consultation['subject']}",
                     f"   Platform: {consultation['platform']}",
                     f"   Decision: {consultation['decision'].upper()}",
-                    f"   Reasoning: {consultation['reasoning']}",
+                    f"   Reasoning: {consultation.get('reasoning', 'N/A')}",
                 ])
                 # actions_taken is now part of submission_details
                 submission_details = consultation.get('submission_details', {})

@@ -63,3 +63,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Browser profiles
+profiles/default/
