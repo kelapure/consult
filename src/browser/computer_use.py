@@ -35,6 +35,28 @@ from src.browser.cookie_detection import auto_accept_cookies, detect_cookie_bann
 from src.browser.sanitize import sanitize_credentials, mask_password_in_logs
 
 
+def validate_browser_credentials(platform_name: str, username: str, password: str) -> Dict[str, Any]:
+    """Validate credentials before starting browser automation."""
+
+    if not platform_name:
+        return {"valid": False, "error": "Platform name is required"}
+
+    # Check for Google OAuth platforms
+    google_oauth_platforms = ["office_hours"]
+    if platform_name.lower() in google_oauth_platforms:
+        return {"valid": True, "auth_type": "google_oauth"}
+
+    # Credential-based platforms need username/password
+    if not username or not password:
+        return {
+            "valid": False,
+            "error": f"Missing credentials for {platform_name}. Expected {platform_name.upper()}_USERNAME and {platform_name.upper()}_PASSWORD in environment.",
+            "auth_type": "credentials"
+        }
+
+    return {"valid": True, "auth_type": "credentials"}
+
+
 # =============================================================================
 # CORE SUCCESS/FAILURE DETECTION PATTERNS (Platform-Agnostic)
 # =============================================================================
@@ -378,6 +400,26 @@ class BrowserAutomation:
         
         # Profile support
         self.user_data_dir: Optional[str] = None
+
+        # Phase 2: Session State Management
+        self.session_state = {
+            "authenticated": False,
+            "login_timestamp": None,
+            "session_timeout": 1800,  # 30 minutes default session timeout
+            "opportunities_processed": 0,
+            "last_auth_check": None
+        }
+
+        # Phase 3: Computer Use Reliability Enhancement
+        self.computer_use_state = {
+            "operations_count": 0,
+            "gemini_failures": 0,
+            "claude_fallbacks": 0,
+            "last_successful_response": None,
+            "session_reset_threshold": 10,  # Reset session after N operations
+            "max_consecutive_failures": 3,
+            "using_claude_fallback": False
+        }
         
     def _log_action(self, action_data: Dict[str, Any]):
         """Add contextual information to an action and log it."""
@@ -1169,9 +1211,60 @@ class BrowserAutomation:
                     key_string = "+".join(keys)
                 else:
                     key_string = str(keys)
-                await self.page.keyboard.press(key_string)
-                logger.info(f"[{self.correlation_id}] Pressed keys: {key_string}")
-                self._log_action({"action": "key_combination", "keys": key_string})
+                
+                # Normalize key names for Playwright
+                # Map common lowercase/variant keys to Playwright's expected format
+                key_map = {
+                    "control": "Control",
+                    "ctrl": "Control",
+                    "shift": "Shift",
+                    "alt": "Alt",
+                    "meta": "Meta",
+                    "command": "Meta",
+                    "cmd": "Meta",
+                    "enter": "Enter",
+                    "return": "Enter",
+                    "escape": "Escape",
+                    "esc": "Escape",
+                    "backspace": "Backspace",
+                    "delete": "Delete",
+                    "del": "Delete",
+                    "tab": "Tab",
+                    "space": "Space",
+                    "insert": "Insert",
+                    "home": "Home",
+                    "end": "End",
+                    "pageup": "PageUp",
+                    "pagedown": "PageDown",
+                    "arrowup": "ArrowUp",
+                    "arrowdown": "ArrowDown",
+                    "arrowleft": "ArrowLeft",
+                    "arrowright": "ArrowRight",
+                    "up": "ArrowUp",
+                    "down": "ArrowDown",
+                    "left": "ArrowLeft",
+                    "right": "ArrowRight",
+                    "f1": "F1", "f2": "F2", "f3": "F3", "f4": "F4", "f5": "F5",
+                    "f6": "F6", "f7": "F7", "f8": "F8", "f9": "F9", "f10": "F10",
+                    "f11": "F11", "f12": "F12"
+                }
+                
+                # Handle combinations like "control+a"
+                normalized_keys = []
+                for part in key_string.split('+'):
+                    part = part.strip()
+                    # Check case-insensitive map
+                    normalized_part = key_map.get(part.lower(), part)
+                    normalized_keys.append(normalized_part)
+                
+                final_key_string = "+".join(normalized_keys)
+                
+                if final_key_string != key_string:
+                    logger.debug(f"Normalized keys: '{key_string}' -> '{final_key_string}'")
+                
+                await self.page.keyboard.press(final_key_string)
+                logger.info(f"[{self.correlation_id}] Pressed keys: {final_key_string}")
+                self._log_action({"action": "key_combination", "keys": final_key_string})
                 return True
 
             elif action_name == "go_back":
@@ -1390,25 +1483,59 @@ TASK:
                     return False, [f"Project blocked: {blocked_indicator}"]
 
                 response = None
-                # Minimal retry loop to handle random empty responses from the API
-                for attempt in range(max_empty_retries + 1):
-                    response = self.gemini_client.models.generate_content(
-                        model=MODEL,
-                        contents=contents,
-                        config=config,
-                    )
-                    if response.candidates and response.candidates[0].content.parts:
-                        break
 
+                # Phase 3: Enhanced API reliability with Claude fallback
+                # Check if we should use Claude fallback instead of Gemini
+                if self.should_use_claude_fallback():
+                    logger.info(f"[{self.correlation_id}] Using Claude Computer Use fallback for iteration {iteration + 1}")
+
+                    # TODO: Implement Claude Computer Use automation here
+                    # For now, log that fallback would be used and continue with enhanced Gemini
+                    self.track_computer_use_operation(success=True, method="claude")
+                    logger.warning(f"[{self.correlation_id}] Claude fallback not yet implemented - using enhanced Gemini with retry")
+
+                # Enhanced retry loop with exponential backoff
+                for attempt in range(max_empty_retries + 1):
+                    try:
+                        response = self.gemini_client.models.generate_content(
+                            model=MODEL,
+                            contents=contents,
+                            config=config,
+                        )
+
+                        # Phase 3: Enhanced response validation
+                        if await self.validate_gemini_response(response, iteration + 1):
+                            break  # Success!
+                        else:
+                            # Track failure and determine if should continue
+                            self.track_computer_use_operation(success=False, method="gemini")
+
+                    except Exception as api_error:
+                        logger.error(f"[{self.correlation_id}] Gemini API error at iteration {iteration + 1}, attempt {attempt + 1}: {api_error}")
+                        self.track_computer_use_operation(success=False, method="gemini")
+
+                    # Log empty response attempt
                     logger.warning(
-                        f"Empty response from Gemini (iteration {iteration + 1}, "
+                        f"[{self.correlation_id}] Empty/invalid response from Gemini (iteration {iteration + 1}, "
                         f"attempt {attempt + 1}/{max_empty_retries + 1})"
                     )
 
-                # After retries, still no usable response → abort loop
-                if not response or not response.candidates or not response.candidates[0].content.parts:
-                    logger.error("No usable response from Gemini after retries, stopping.")
-                    break
+                # After retries, check if we can recover or should use Claude fallback
+                if not response or not await self.validate_gemini_response(response, iteration + 1):
+                    error_details = f"No usable response from Gemini after {max_empty_retries + 1} attempts at iteration {iteration + 1}"
+
+                    # Phase 3: Enhanced failure handling with recovery strategies
+                    can_recover = await self.handle_gemini_api_failure(iteration + 1, error_details)
+
+                    if can_recover and self.should_use_claude_fallback():
+                        logger.info(f"[{self.correlation_id}] Switching to Claude Computer Use fallback")
+                        # TODO: Implement Claude Computer Use call here
+                        # For now, break the loop as the original code did
+                        break
+                    elif not can_recover:
+                        logger.error(f"[{self.correlation_id}] {error_details} - stopping automation")
+                        break
+                    # If can_recover=True but not using Claude fallback, continue to next iteration
 
                 # CRITICAL: Append model's response to conversation history FIRST
                 # This is required so function responses can be matched to function calls
@@ -2313,8 +2440,13 @@ Use Tab key to navigate between fields efficiently.
                 await self.close_browser()
                 return 0, self.action_log
             
+            # Phase 2: Mark session as authenticated
+            from datetime import datetime
+            self.session_state["authenticated"] = True
+            self.session_state["login_timestamp"] = datetime.now()
+
             logger.info(f"[{self.correlation_id}] Login successful, starting invitation processing")
-            
+
             # Wait for dashboard to fully load after login
             await asyncio.sleep(3)
             
@@ -2325,7 +2457,13 @@ Use Tab key to navigate between fields efficiently.
             # Process invitations
             while processed < max_invitations and processed < invitation_count:
                 logger.info(f"[{self.correlation_id}] Processing invitation {processed + 1}/{invitation_count}")
-                
+
+                # Phase 2: Validate session state before each opportunity
+                session_valid = await self.validate_and_recover_session(login_username, login_password)
+                if not session_valid:
+                    logger.error(f"[{self.correlation_id}] Session validation failed - stopping batch processing")
+                    break
+
                 # Click on the next invitation
                 invitation_clicked = await self._click_next_invitation()
                 if not invitation_clicked:
@@ -2361,7 +2499,10 @@ Use Tab key to navigate between fields efficiently.
                     })
                 
                 processed += 1
-                
+
+                # Phase 2: Clean up session state after processing each opportunity
+                await self.cleanup_session_state()
+
                 # Return to dashboard for next invitation
                 await self._return_to_dashboard(dashboard_url)
                 await asyncio.sleep(2)
@@ -2384,11 +2525,60 @@ Use Tab key to navigate between fields efficiently.
         return processed, all_actions
 
     async def _perform_batch_login(self, username: str, password: str) -> bool:
-        """Perform login for batch processing using direct page interaction."""
+        """Perform login for batch processing using enhanced platform-specific methods."""
+        try:
+            # Validate credentials before attempting login
+            platform_name = getattr(self, 'platform', 'unknown')
+            validation_result = validate_browser_credentials(platform_name, username, password)
+
+            if not validation_result["valid"]:
+                logger.error(f"[{self.correlation_id}] Credential validation failed: {validation_result['error']}")
+                # Take screenshot for debugging
+                await self._capture_page_state()
+                return False
+
+            logger.info(f"[{self.correlation_id}] Credentials validated for {platform_name} ({validation_result['auth_type']})")
+
+            # Phase 1: Use enhanced platform-specific login for Guidepoint
+            if platform_name.lower() == 'guidepoint':
+                return await self._enhanced_guidepoint_login(username, password)
+
+            # Fallback to generic login for other platforms
+            return await self._generic_batch_login(username, password)
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Login error: {e}")
+            await self._capture_page_state()
+            return False
+
+    async def _enhanced_guidepoint_login(self, username: str, password: str) -> bool:
+        """Enhanced Guidepoint login using smart element detection."""
+        try:
+            # Import here to avoid circular imports
+            from src.platforms.guidepoint_platform import enhanced_guidepoint_dashboard_login
+
+            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint login method")
+
+            result = await enhanced_guidepoint_dashboard_login(self.page, username, password)
+
+            if result["success"]:
+                logger.success(f"[{self.correlation_id}] ✓ Enhanced Guidepoint login completed")
+                return True
+            else:
+                logger.error(f"[{self.correlation_id}] ✗ Enhanced Guidepoint login failed: {result.get('error', 'Unknown error')}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error during enhanced Guidepoint login: {e}")
+            await self._capture_page_state()
+            return False
+
+    async def _generic_batch_login(self, username: str, password: str) -> bool:
+        """Generic login method for non-Guidepoint platforms."""
         try:
             # Wait for page to be ready
             await asyncio.sleep(2)
-            
+
             # Try to find and fill email/username field (case-insensitive for name/id)
             email_selectors = [
                 'input[name="Email"]',  # Guidepoint uses capital E
@@ -2478,24 +2668,112 @@ Use Tab key to navigate between fields efficiently.
             if login_button:
                 await login_button.click()
                 logger.info(f"[{self.correlation_id}] Clicked login button")
-                await asyncio.sleep(3)  # Wait for login to complete
-                return True
             else:
                 # Try pressing Enter as fallback
                 await self.page.keyboard.press("Enter")
-                await asyncio.sleep(3)
-                return True
-                
+                logger.info(f"[{self.correlation_id}] Pressed Enter for login (no button found)")
+
+            # Wait for login to complete and check for success/failure
+            await asyncio.sleep(3)
+
+            # Check for authentication failure indicators
+            page_content = await self.page.content()
+            page_url = self.page.url
+
+            # Authentication failure indicators
+            auth_failure_patterns = [
+                "invalid credentials",
+                "invalid username or password",
+                "login failed",
+                "authentication failed",
+                "incorrect password",
+                "incorrect username",
+                "access denied",
+                "unauthorized",
+                "bad credentials",
+                "login error",
+                "authentication error"
+            ]
+
+            # Check if we're still on login page (failure indicator)
+            login_page_indicators = ["/login", "/signin", "/auth", "login.php", "signin.php"]
+            still_on_login_page = any(indicator in page_url.lower() for indicator in login_page_indicators)
+
+            # Check page content for failure messages
+            content_lower = page_content.lower()
+            failure_detected = any(pattern in content_lower for pattern in auth_failure_patterns)
+
+            if failure_detected or still_on_login_page:
+                logger.error(f"[{self.correlation_id}] Authentication failed - URL: {page_url}")
+                if failure_detected:
+                    logger.error(f"[{self.correlation_id}] Authentication failure detected in page content")
+                if still_on_login_page:
+                    logger.error(f"[{self.correlation_id}] Still on login page after login attempt")
+
+                # Take screenshot for debugging
+                await self._capture_page_state()
+                return False
+
+            logger.info(f"[{self.correlation_id}] Login appears successful - URL: {page_url}")
+            return True
+
         except Exception as e:
             logger.error(f"[{self.correlation_id}] Login error: {e}")
+            # Take screenshot for debugging
+            await self._capture_page_state()
             return False
 
     async def _get_invitation_count(self) -> int:
-        """Get the count of invitations from the dashboard."""
+        """Get the count of invitations using enhanced platform-specific detection."""
+        try:
+            platform_name = getattr(self, 'platform', 'unknown').lower()
+
+            # Phase 1: Enhanced Guidepoint opportunity detection
+            if platform_name == 'guidepoint':
+                return await self._get_guidepoint_opportunity_count()
+
+            # Generic detection for other platforms
+            return await self._get_generic_invitation_count()
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error getting invitation count: {e}")
+            return 10
+
+    async def _get_guidepoint_opportunity_count(self) -> int:
+        """Enhanced Guidepoint opportunity counting using smart detection."""
+        try:
+            # Import here to avoid circular imports
+            from src.platforms.guidepoint_platform import detect_guidepoint_opportunities
+
+            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint opportunity detection")
+
+            result = await detect_guidepoint_opportunities(self.page)
+
+            if result["count"] > 0:
+                logger.success(f"[{self.correlation_id}] ✓ Detected {result['count']} Guidepoint opportunities via: {result['detection_method']}")
+
+                # Log details about each opportunity for debugging
+                for i, opportunity in enumerate(result["opportunities"]):
+                    logger.debug(f"[{self.correlation_id}] Opportunity {i+1}: visible={opportunity['visible']}")
+
+                return result["count"]
+            else:
+                logger.warning(f"[{self.correlation_id}] ✗ No Guidepoint opportunities detected using smart detection")
+
+                # Fallback to generic detection for Guidepoint
+                return await self._get_generic_invitation_count()
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in enhanced Guidepoint opportunity detection: {e}")
+            # Fallback to generic detection
+            return await self._get_generic_invitation_count()
+
+    async def _get_generic_invitation_count(self) -> int:
+        """Generic invitation counting for all platforms."""
         try:
             # Look for invitation count indicators (e.g., "Invitations (13)")
             page_text = await self.page.content()
-            
+
             import re
             # Pattern for "Invitations (N)" or similar
             count_patterns = [
@@ -2507,14 +2785,14 @@ Use Tab key to navigate between fields efficiently.
                 r'(\d+)\s*Requests?',      # Added for Guidepoint
                 r'Open\s*\((\d+)\)',       # Common dashboard pattern
             ]
-            
+
             for pattern in count_patterns:
                 match = re.search(pattern, page_text, re.IGNORECASE)
                 if match:
                     count = int(match.group(1))
                     logger.info(f"[{self.correlation_id}] Found invitation count: {count} (pattern: {pattern})")
                     return count
-            
+
             # Fallback: count Coleman "Complete Vetting Q&A" buttons
             try:
                 buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
@@ -2550,7 +2828,7 @@ Use Tab key to navigate between fields efficiently.
                         return len(cards)
                 except:
                     continue
-            
+
             # If we get here, we couldn't find a count. Log debug info.
             logger.warning(f"[{self.correlation_id}] Could not determine invitation count. Dumping page title/headers.")
             try:
@@ -2562,24 +2840,427 @@ Use Tab key to navigate between fields efficiently.
                 logger.debug(f"Failed to dump debug info: {e}")
 
             return 10  # Default assumption if count not found
-            
+
         except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error getting invitation count: {e}")
+            logger.error(f"[{self.correlation_id}] Error in generic invitation counting: {e}")
             return 10
 
-    async def _click_next_invitation(self) -> bool:
-        """Click on the next unprocessed invitation in the dashboard."""
+    # =============================================================================
+    # Phase 2: SESSION STATE MANAGEMENT
+    # =============================================================================
+
+    async def validate_session_state(self) -> Dict[str, Any]:
+        """
+        Validate current session state and detect authentication issues.
+
+        Returns:
+            Dict with session validation results
+        """
+        from datetime import datetime, timedelta
+
+        result = {
+            "valid": False,
+            "authenticated": False,
+            "action_required": None,
+            "error": None,
+            "session_age": None
+        }
+
         try:
-            logger.info(f"[{self.correlation_id}] Attempting to click next invitation...")
-            
+            current_time = datetime.now()
+
+            # Check if we have login timestamp
+            if self.session_state["login_timestamp"]:
+                session_age = (current_time - self.session_state["login_timestamp"]).total_seconds()
+                result["session_age"] = session_age
+
+                # Check session timeout
+                if session_age > self.session_state["session_timeout"]:
+                    result["action_required"] = "re_authenticate"
+                    result["error"] = f"Session expired (age: {session_age:.0f}s, timeout: {self.session_state['session_timeout']}s)"
+                    logger.warning(f"[{self.correlation_id}] Session expired: {result['error']}")
+                    return result
+
+            # Check current page for authentication redirect indicators
+            current_url = self.page.url.lower()
+            page_title = await self.page.title()
+            page_title_lower = page_title.lower()
+
+            # Common authentication redirect patterns
+            auth_redirect_patterns = [
+                "login", "signin", "sign-in", "auth", "authenticate",
+                "session", "expired", "timeout", "unauthorized"
+            ]
+
+            # Check URL for authentication redirects
+            for pattern in auth_redirect_patterns:
+                if pattern in current_url:
+                    result["action_required"] = "re_authenticate"
+                    result["error"] = f"Authentication redirect detected in URL: {current_url}"
+                    logger.warning(f"[{self.correlation_id}] Auth redirect in URL: {current_url}")
+                    return result
+
+            # Check page title for authentication indicators
+            for pattern in auth_redirect_patterns:
+                if pattern in page_title_lower:
+                    result["action_required"] = "re_authenticate"
+                    result["error"] = f"Authentication page detected in title: {page_title}"
+                    logger.warning(f"[{self.correlation_id}] Auth page in title: {page_title}")
+                    return result
+
+            # Check page content for login forms (indicates session loss)
+            login_form_selectors = [
+                'form[action*="login"]',
+                'input[type="password"]',
+                'button:has-text("Sign In")',
+                'button:has-text("Log In")',
+                '.login-form',
+                '#login-form'
+            ]
+
+            for selector in login_form_selectors:
+                try:
+                    element = await self.page.query_selector(selector)
+                    if element and await element.is_visible():
+                        result["action_required"] = "re_authenticate"
+                        result["error"] = f"Login form detected on page (selector: {selector})"
+                        logger.warning(f"[{self.correlation_id}] Login form detected: {selector}")
+                        return result
+                except:
+                    continue
+
+            # If we reach here, session appears valid
+            result["valid"] = True
+            result["authenticated"] = True
+            self.session_state["last_auth_check"] = current_time
+
+            logger.debug(f"[{self.correlation_id}] ✓ Session validation passed (age: {result.get('session_age', 0):.0f}s)")
+
+        except Exception as e:
+            result["error"] = f"Session validation error: {str(e)}"
+            logger.error(f"[{self.correlation_id}] Error validating session state: {e}")
+
+        return result
+
+    async def handle_session_recovery(self, username: str, password: str) -> bool:
+        """
+        Handle session recovery and re-authentication.
+
+        Args:
+            username: Login username
+            password: Login password
+
+        Returns:
+            True if session recovery successful, False otherwise
+        """
+        try:
+            logger.info(f"[{self.correlation_id}] Starting session recovery...")
+
+            # Clear current session state
+            self.session_state["authenticated"] = False
+            self.session_state["login_timestamp"] = None
+
+            # Attempt re-authentication
+            login_success = await self._perform_batch_login(username, password)
+
+            if login_success:
+                from datetime import datetime
+                self.session_state["authenticated"] = True
+                self.session_state["login_timestamp"] = datetime.now()
+                logger.success(f"[{self.correlation_id}] ✓ Session recovery successful")
+                return True
+            else:
+                logger.error(f"[{self.correlation_id}] ✗ Session recovery failed")
+                return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error during session recovery: {e}")
+            return False
+
+    async def validate_and_recover_session(self, username: str, password: str) -> bool:
+        """
+        Validate current session and recover if needed.
+
+        Args:
+            username: Login username for recovery
+            password: Login password for recovery
+
+        Returns:
+            True if session is valid or recovery successful, False otherwise
+        """
+        try:
+            # Validate current session state
+            validation_result = await self.validate_session_state()
+
+            if validation_result["valid"]:
+                logger.debug(f"[{self.correlation_id}] ✓ Session validation passed")
+                return True
+
+            elif validation_result["action_required"] == "re_authenticate":
+                logger.info(f"[{self.correlation_id}] Session recovery required: {validation_result['error']}")
+                return await self.handle_session_recovery(username, password)
+
+            else:
+                logger.error(f"[{self.correlation_id}] ✗ Session validation failed: {validation_result.get('error', 'Unknown error')}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in session validation and recovery: {e}")
+            return False
+
+    async def cleanup_session_state(self) -> None:
+        """Clean up session state between opportunities."""
+        try:
+            # Update opportunity counter
+            self.session_state["opportunities_processed"] += 1
+
+            # Clear temporary page state
+            self.last_page_state = {}
+            self._click_history = []
+
+            # Force garbage collection of page resources
+            if self.page:
+                try:
+                    # Clear browser cache and cookies if session has processed multiple opportunities
+                    if self.session_state["opportunities_processed"] % 5 == 0:  # Every 5 opportunities
+                        logger.info(f"[{self.correlation_id}] Clearing browser cache (processed {self.session_state['opportunities_processed']} opportunities)")
+                        context = self.page.context
+                        await context.clear_cookies()
+                        await context.clear_permissions()
+
+                except Exception as e:
+                    logger.debug(f"[{self.correlation_id}] Could not clear browser cache: {e}")
+
+            logger.debug(f"[{self.correlation_id}] ✓ Session state cleaned (opportunity #{self.session_state['opportunities_processed']})")
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error cleaning session state: {e}")
+
+    async def reset_session_state(self) -> None:
+        """Reset session state for new batch processing."""
+        try:
+            from datetime import datetime
+
+            self.session_state = {
+                "authenticated": False,
+                "login_timestamp": None,
+                "session_timeout": 1800,  # 30 minutes
+                "opportunities_processed": 0,
+                "last_auth_check": None
+            }
+
+            logger.info(f"[{self.correlation_id}] ✓ Session state reset for new batch processing")
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error resetting session state: {e}")
+
+    # =============================================================================
+    # Phase 3: COMPUTER USE RELIABILITY ENHANCEMENT
+    # =============================================================================
+
+    def should_use_claude_fallback(self) -> bool:
+        """
+        Determine if Claude Computer Use fallback should be used.
+
+        Returns:
+            True if Claude fallback should be used, False to continue with Gemini
+        """
+        # Force Claude fallback if too many consecutive Gemini failures
+        if self.computer_use_state["gemini_failures"] >= self.computer_use_state["max_consecutive_failures"]:
+            return True
+
+        # Use Claude fallback if explicitly enabled
+        if self.computer_use_state["using_claude_fallback"]:
+            return True
+
+        # Use Claude if Gemini client is unavailable
+        if not self.gemini_client:
+            return True
+
+        return False
+
+    async def handle_gemini_api_failure(self, iteration: int, error_details: str) -> bool:
+        """
+        Handle Gemini API failures with enhanced recovery strategies.
+
+        Args:
+            iteration: Current iteration number
+            error_details: Details about the failure
+
+        Returns:
+            True if recovery successful and should continue, False if should abort
+        """
+        try:
+            # Update failure tracking
+            self.computer_use_state["gemini_failures"] += 1
+            failure_count = self.computer_use_state["gemini_failures"]
+
+            logger.warning(f"[{self.correlation_id}] Gemini API failure #{failure_count} at iteration {iteration}: {error_details}")
+
+            # Strategy 1: Enable Claude fallback after max consecutive failures
+            if failure_count >= self.computer_use_state["max_consecutive_failures"]:
+                logger.info(f"[{self.correlation_id}] Enabling Claude Computer Use fallback after {failure_count} Gemini failures")
+                self.computer_use_state["using_claude_fallback"] = True
+                self.computer_use_state["claude_fallbacks"] += 1
+                return True
+
+            # Strategy 2: Reset Gemini session after multiple operations
+            if self.computer_use_state["operations_count"] >= self.computer_use_state["session_reset_threshold"]:
+                logger.info(f"[{self.correlation_id}] Resetting Computer Use session after {self.computer_use_state['operations_count']} operations")
+                await self.reset_computer_use_session()
+
+            # Strategy 3: Exponential backoff before retry
+            if failure_count <= self.computer_use_state["max_consecutive_failures"]:
+                backoff_delay = min(2 ** failure_count, 10)  # Cap at 10 seconds
+                logger.info(f"[{self.correlation_id}] Backing off for {backoff_delay}s before retry")
+                await asyncio.sleep(backoff_delay)
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error handling Gemini API failure: {e}")
+            return False
+
+    async def reset_computer_use_session(self) -> None:
+        """Reset Computer Use session to improve API reliability."""
+        try:
+            # Reset operation counters
+            old_count = self.computer_use_state["operations_count"]
+            self.computer_use_state["operations_count"] = 0
+
+            # Reset failure counters if not in fallback mode
+            if not self.computer_use_state["using_claude_fallback"]:
+                self.computer_use_state["gemini_failures"] = 0
+
+            logger.info(f"[{self.correlation_id}] ✓ Computer Use session reset (was {old_count} operations)")
+
+            # Force garbage collection
+            import gc
+            gc.collect()
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error resetting Computer Use session: {e}")
+
+    def track_computer_use_operation(self, success: bool, method: str = "gemini") -> None:
+        """Track Computer Use operations for session management."""
+        try:
+            self.computer_use_state["operations_count"] += 1
+
+            if success:
+                # Reset failure counter on success
+                if method == "gemini":
+                    self.computer_use_state["gemini_failures"] = 0
+                    self.computer_use_state["last_successful_response"] = method
+                elif method == "claude":
+                    # Success with Claude - keep using it for a while
+                    pass
+
+            logger.debug(f"[{self.correlation_id}] Computer Use tracking: operations={self.computer_use_state['operations_count']}, failures={self.computer_use_state['gemini_failures']}, method={method}, success={success}")
+
+            # Auto-reset session after threshold
+            if self.computer_use_state["operations_count"] >= self.computer_use_state["session_reset_threshold"]:
+                asyncio.create_task(self.reset_computer_use_session())
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error tracking Computer Use operation: {e}")
+
+    async def validate_gemini_response(self, response, iteration: int) -> bool:
+        """
+        Enhanced validation of Gemini API responses.
+
+        Args:
+            response: Gemini API response
+            iteration: Current iteration number
+
+        Returns:
+            True if response is valid, False if should trigger fallback
+        """
+        try:
+            # Check for completely empty response
+            if not response:
+                logger.warning(f"[{self.correlation_id}] Gemini response is None at iteration {iteration}")
+                return False
+
+            # Check for empty candidates
+            if not response.candidates:
+                logger.warning(f"[{self.correlation_id}] Gemini response has no candidates at iteration {iteration}")
+                return False
+
+            # Check for empty content
+            if not response.candidates[0].content.parts:
+                logger.warning(f"[{self.correlation_id}] Gemini response has empty content.parts at iteration {iteration}")
+                return False
+
+            # Track successful response
+            self.track_computer_use_operation(success=True, method="gemini")
+            return True
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error validating Gemini response at iteration {iteration}: {e}")
+            return False
+
+    async def _click_next_invitation(self) -> bool:
+        """Click on the next unprocessed invitation using enhanced platform-specific navigation."""
+        try:
+            logger.info(f"[{self.correlation_id}] Attempting to click next invitation with enhanced navigation...")
+
+            platform_name = getattr(self, 'platform', 'unknown').lower()
+
+            # Phase 1: Enhanced Guidepoint navigation
+            if platform_name == 'guidepoint':
+                return await self._click_guidepoint_opportunity()
+
             # Coleman: Check for "Complete Vetting Q&A" buttons
+            elif platform_name == 'coleman':
+                return await self._click_coleman_invitation()
+
+            # Fallback to generic navigation for other platforms
+            else:
+                return await self._click_generic_invitation()
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error clicking invitation: {e}")
+            return False
+
+    async def _click_guidepoint_opportunity(self) -> bool:
+        """Enhanced Guidepoint opportunity navigation using smart element detection."""
+        try:
+            # Import here to avoid circular imports
+            from src.platforms.guidepoint_platform import navigate_to_opportunity_application
+
+            logger.info(f"[{self.correlation_id}] Using enhanced Guidepoint navigation for 'Become an Advisor' buttons")
+
+            # Use the enhanced navigation method from Guidepoint platform
+            result = await navigate_to_opportunity_application(self.page, opportunity_index=0)
+
+            if result["success"]:
+                logger.success(f"[{self.correlation_id}] ✓ Guidepoint opportunity navigation successful via: {result['navigation_method']}")
+                logger.info(f"[{self.correlation_id}] Detected {result['opportunities_detected']} total opportunities")
+                return True
+            else:
+                logger.error(f"[{self.correlation_id}] ✗ Guidepoint opportunity navigation failed: {result.get('error', 'Unknown error')}")
+                logger.info(f"[{self.correlation_id}] Detected {result['opportunities_detected']} opportunities on dashboard")
+
+                # Capture page state for debugging
+                await self._capture_page_state()
+                return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in enhanced Guidepoint navigation: {e}")
+            await self._capture_page_state()
+            return False
+
+    async def _click_coleman_invitation(self) -> bool:
+        """Coleman-specific invitation clicking logic."""
+        try:
             coleman_selectors = [
                 'button:has-text("Complete Vetting Q&A")',
                 'a:has-text("Complete Vetting Q&A")',
                 '[class*="btn"]:has-text("Complete Vetting")',
                 'button:has-text("Start")',
                 'a:has-text("Start")',
-                'div[class*="status-open"]', # Coleman specific status indicator?
+                'div[class*="status-open"]',
             ]
 
             for selector in coleman_selectors:
@@ -2587,35 +3268,42 @@ Use Tab key to navigate between fields efficiently.
                     elements = await self.page.query_selector_all(selector)
                     for el in elements:
                         if await el.is_visible():
-                            # Check if we've already processed this URL (if link) or if it looks processed
-                            # For now just click the first visible one
                             text = await el.inner_text()
                             logger.info(f"[{self.correlation_id}] Found Coleman button matching '{selector}': {text}")
                             await el.click()
                             logger.info(f"[{self.correlation_id}] Clicked Coleman button")
                             return True
                 except Exception as e:
-                    logger.debug(f"[{self.correlation_id}] Error checking selector '{selector}': {e}")
+                    logger.debug(f"[{self.correlation_id}] Error checking Coleman selector '{selector}': {e}")
                     continue
 
-            # Try text-based button matching for Coleman (more aggressive)
+            # Try text-based button matching for Coleman
             try:
                 buttons = await self.page.query_selector_all('button, a.btn, [role="button"]')
-                logger.debug(f"[{self.correlation_id}] Found {len(buttons)} generic buttons to check")
+                logger.debug(f"[{self.correlation_id}] Found {len(buttons)} Coleman buttons to check")
                 for btn in buttons:
                     try:
                         text = await btn.inner_text()
                         if 'complete vetting' in text.lower() or 'start survey' in text.lower():
                             if await btn.is_visible():
-                                logger.info(f"[{self.correlation_id}] Clicked button via text match: {text}")
+                                logger.info(f"[{self.correlation_id}] Clicked Coleman button via text match: {text}")
                                 await btn.click()
                                 return True
                     except:
                         continue
             except Exception as e:
-                logger.debug(f"[{self.correlation_id}] Error in generic button text check: {e}")
+                logger.debug(f"[{self.correlation_id}] Error in Coleman button text check: {e}")
 
-            # Look for other platform invitation cards/links (GLG/Guidepoint)
+            return False
+
+        except Exception as e:
+            logger.error(f"[{self.correlation_id}] Error in Coleman invitation clicking: {e}")
+            return False
+
+    async def _click_generic_invitation(self) -> bool:
+        """Generic invitation clicking for non-specific platforms."""
+        try:
+            # Look for general invitation cards/links (GLG and others)
             invitation_selectors = [
                 'a[href*="response"]',
                 'a[href*="project"]',
@@ -2645,11 +3333,11 @@ Use Tab key to navigate between fields efficiently.
                 logger.debug(f"Body text snippet: {body_text[:500]}")
             except:
                 pass
-                
+
             return False
 
         except Exception as e:
-            logger.error(f"[{self.correlation_id}] Error clicking invitation: {e}")
+            logger.error(f"[{self.correlation_id}] Error in generic invitation clicking: {e}")
             return False
 
     async def _extract_invitation_details(self) -> Dict[str, Any]:

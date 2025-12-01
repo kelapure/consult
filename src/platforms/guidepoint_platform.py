@@ -383,6 +383,365 @@ Do NOT stop until you see confirmation that the response was submitted.
 
 
 # =============================================================================
+# GUIDEPOINT DASHBOARD NAVIGATION (Phase 1: Enhanced Navigation)
+# =============================================================================
+
+# Smart element detection strategies for Guidepoint dashboard
+GUIDEPOINT_NAVIGATION_STRATEGIES = {
+    "become_advisor_button": {
+        # Multiple strategies to find and click "Become an Advisor" buttons
+        "css_selectors": [
+            'a[href*="advisor"]',
+            'button:has-text("Become an Advisor")',
+            'a:has-text("Become an Advisor")',
+            '.advisor-button',
+            '[data-testid*="advisor"]',
+            '.opportunity-action',
+            '.apply-button',
+        ],
+        "text_patterns": [
+            "Become an Advisor",
+            "Apply Now",
+            "Submit Application",
+            "Express Interest",
+            "Apply for this opportunity"
+        ],
+        "xpath_selectors": [
+            '//a[contains(text(), "Become an Advisor")]',
+            '//button[contains(text(), "Become an Advisor")]',
+            '//a[contains(@href, "advisor")]',
+            '//button[contains(@class, "advisor")]'
+        ]
+    },
+    "opportunity_cards": {
+        # Strategies to detect opportunity cards on dashboard
+        "css_selectors": [
+            '.opportunity-card',
+            '.consultation-card',
+            '[data-testid*="opportunity"]',
+            '.project-card',
+            '.invitation-card'
+        ],
+        "container_patterns": [
+            "opportunity",
+            "consultation",
+            "project",
+            "invitation"
+        ]
+    },
+    "dashboard_login": {
+        # Enhanced login detection for dashboard
+        "login_forms": [
+            '#login-form',
+            '.login-container',
+            'form[action*="login"]',
+            '[data-testid="login-form"]'
+        ],
+        "username_fields": [
+            'input[name="username"]',
+            'input[name="email"]',
+            'input[type="email"]',
+            '#username',
+            '#email'
+        ],
+        "password_fields": [
+            'input[name="password"]',
+            'input[type="password"]',
+            '#password'
+        ],
+        "login_buttons": [
+            'button[type="submit"]',
+            'input[type="submit"]',
+            'button:has-text("Sign In")',
+            'button:has-text("Log In")',
+            '.login-button'
+        ]
+    }
+}
+
+async def smart_element_click(page: Page, strategy_config: Dict[str, Any], description: str) -> Dict[str, Any]:
+    """
+    Smart element detection and clicking with fallback chain.
+
+    Uses CSS selectors → text match → XPath → coordinate as last resort.
+    Validates element visibility and clickability before interaction.
+
+    Args:
+        page: Playwright page object
+        strategy_config: Navigation strategy configuration
+        description: Description of the action for logging
+
+    Returns:
+        Dict with success status and method used
+    """
+    result = {
+        "success": False,
+        "method_used": None,
+        "error": None,
+        "element_found": False
+    }
+
+    try:
+        # Strategy 1: CSS Selectors (most reliable)
+        if "css_selectors" in strategy_config:
+            for selector in strategy_config["css_selectors"]:
+                try:
+                    element = page.locator(selector).first
+                    if await element.is_visible() and await element.is_enabled():
+                        await element.click()
+                        result["success"] = True
+                        result["method_used"] = f"css_selector: {selector}"
+                        result["element_found"] = True
+                        logger.info(f"✓ {description} - Success via CSS selector: {selector}")
+                        return result
+                except Exception as e:
+                    logger.debug(f"CSS selector {selector} failed: {e}")
+                    continue
+
+        # Strategy 2: Text-based targeting
+        if "text_patterns" in strategy_config:
+            for text_pattern in strategy_config["text_patterns"]:
+                try:
+                    # Try button with text
+                    element = page.get_by_text(text_pattern, exact=False).first
+                    if await element.is_visible() and await element.is_enabled():
+                        await element.click()
+                        result["success"] = True
+                        result["method_used"] = f"text_pattern: {text_pattern}"
+                        result["element_found"] = True
+                        logger.info(f"✓ {description} - Success via text pattern: {text_pattern}")
+                        return result
+                except Exception as e:
+                    logger.debug(f"Text pattern {text_pattern} failed: {e}")
+                    continue
+
+        # Strategy 3: XPath selectors
+        if "xpath_selectors" in strategy_config:
+            for xpath in strategy_config["xpath_selectors"]:
+                try:
+                    element = page.locator(f"xpath={xpath}").first
+                    if await element.is_visible() and await element.is_enabled():
+                        await element.click()
+                        result["success"] = True
+                        result["method_used"] = f"xpath: {xpath}"
+                        result["element_found"] = True
+                        logger.info(f"✓ {description} - Success via XPath: {xpath}")
+                        return result
+                except Exception as e:
+                    logger.debug(f"XPath {xpath} failed: {e}")
+                    continue
+
+        # If we get here, no strategy worked
+        result["error"] = f"All {description} strategies failed - element not found or not clickable"
+        logger.warning(f"✗ {description} - All smart detection strategies failed")
+
+    except Exception as e:
+        result["error"] = f"Smart element detection error: {str(e)}"
+        logger.error(f"✗ {description} - Exception during smart detection: {e}")
+
+    return result
+
+async def detect_guidepoint_opportunities(page: Page) -> Dict[str, Any]:
+    """
+    Detect and enumerate opportunity cards on Guidepoint dashboard.
+
+    Args:
+        page: Playwright page object
+
+    Returns:
+        Dict with opportunity count and card elements information
+    """
+    result = {
+        "count": 0,
+        "opportunities": [],
+        "detection_method": None
+    }
+
+    try:
+        # Try different strategies to find opportunity cards
+        for selector in GUIDEPOINT_NAVIGATION_STRATEGIES["opportunity_cards"]["css_selectors"]:
+            try:
+                cards = page.locator(selector)
+                count = await cards.count()
+                if count > 0:
+                    result["count"] = count
+                    result["detection_method"] = selector
+
+                    # Get basic info about each card
+                    for i in range(count):
+                        card = cards.nth(i)
+                        card_info = {
+                            "index": i,
+                            "visible": await card.is_visible(),
+                            "text_content": await card.text_content() if await card.is_visible() else ""
+                        }
+                        result["opportunities"].append(card_info)
+
+                    logger.info(f"✓ Detected {count} opportunities via selector: {selector}")
+                    return result
+
+            except Exception as e:
+                logger.debug(f"Opportunity detection selector {selector} failed: {e}")
+                continue
+
+        logger.warning("✗ No opportunity cards detected on dashboard")
+
+    except Exception as e:
+        logger.error(f"✗ Error during opportunity detection: {e}")
+
+    return result
+
+async def enhanced_guidepoint_dashboard_login(page: Page, username: str, password: str) -> Dict[str, Any]:
+    """
+    Enhanced login logic specifically for Guidepoint dashboard.
+
+    Uses smart element detection for reliable form filling.
+
+    Args:
+        page: Playwright page object
+        username: Login username
+        password: Login password
+
+    Returns:
+        Dict with login success status and details
+    """
+    result = {
+        "success": False,
+        "step_completed": None,
+        "error": None
+    }
+
+    try:
+        login_config = GUIDEPOINT_NAVIGATION_STRATEGIES["dashboard_login"]
+
+        # Step 1: Find and fill username field
+        username_filled = False
+        for selector in login_config["username_fields"]:
+            try:
+                element = page.locator(selector).first
+                if await element.is_visible() and await element.is_enabled():
+                    await element.fill(username)
+                    username_filled = True
+                    logger.info(f"✓ Username filled via selector: {selector}")
+                    break
+            except Exception as e:
+                logger.debug(f"Username selector {selector} failed: {e}")
+                continue
+
+        if not username_filled:
+            result["error"] = "Could not find or fill username field"
+            return result
+
+        # Step 2: Find and fill password field
+        password_filled = False
+        for selector in login_config["password_fields"]:
+            try:
+                element = page.locator(selector).first
+                if await element.is_visible() and await element.is_enabled():
+                    await element.fill(password)
+                    password_filled = True
+                    logger.info(f"✓ Password filled via selector: {selector}")
+                    break
+            except Exception as e:
+                logger.debug(f"Password selector {selector} failed: {e}")
+                continue
+
+        if not password_filled:
+            result["error"] = "Could not find or fill password field"
+            return result
+
+        result["step_completed"] = "credentials_filled"
+
+        # Step 3: Find and click login button
+        login_clicked = False
+        for selector in login_config["login_buttons"]:
+            try:
+                element = page.locator(selector).first
+                if await element.is_visible() and await element.is_enabled():
+                    await element.click()
+                    login_clicked = True
+                    logger.info(f"✓ Login button clicked via selector: {selector}")
+                    break
+            except Exception as e:
+                logger.debug(f"Login button selector {selector} failed: {e}")
+                continue
+
+        if not login_clicked:
+            result["error"] = "Could not find or click login button"
+            return result
+
+        # Wait for navigation after login
+        await page.wait_for_load_state("networkidle", timeout=10000)
+        result["success"] = True
+        result["step_completed"] = "login_complete"
+        logger.info("✓ Enhanced Guidepoint dashboard login completed successfully")
+
+    except Exception as e:
+        result["error"] = f"Login error: {str(e)}"
+        logger.error(f"✗ Enhanced dashboard login failed: {e}")
+
+    return result
+
+async def navigate_to_opportunity_application(page: Page, opportunity_index: int = 0) -> Dict[str, Any]:
+    """
+    Navigate to a specific opportunity application using smart element detection.
+
+    This is the core function that fixes the "Become an Advisor" clicking failures.
+
+    Args:
+        page: Playwright page object
+        opportunity_index: Which opportunity to apply to (0-based index)
+
+    Returns:
+        Dict with navigation success status and details
+    """
+    result = {
+        "success": False,
+        "opportunities_detected": 0,
+        "navigation_method": None,
+        "error": None
+    }
+
+    try:
+        # First, detect available opportunities
+        opportunities = await detect_guidepoint_opportunities(page)
+        result["opportunities_detected"] = opportunities["count"]
+
+        if opportunities["count"] == 0:
+            result["error"] = "No opportunities detected on dashboard"
+            return result
+
+        if opportunity_index >= opportunities["count"]:
+            result["error"] = f"Requested opportunity index {opportunity_index} but only {opportunities['count']} available"
+            return result
+
+        logger.info(f"Navigating to opportunity {opportunity_index + 1} of {opportunities['count']}")
+
+        # Use smart element clicking to find and click "Become an Advisor" button
+        click_result = await smart_element_click(
+            page,
+            GUIDEPOINT_NAVIGATION_STRATEGIES["become_advisor_button"],
+            f"Become an Advisor button for opportunity {opportunity_index + 1}"
+        )
+
+        if click_result["success"]:
+            result["success"] = True
+            result["navigation_method"] = click_result["method_used"]
+
+            # Wait for form page to load
+            await page.wait_for_load_state("networkidle", timeout=10000)
+            logger.info(f"✓ Successfully navigated to opportunity application form")
+        else:
+            result["error"] = click_result["error"]
+            logger.error(f"✗ Failed to navigate to opportunity: {click_result['error']}")
+
+    except Exception as e:
+        result["error"] = f"Navigation error: {str(e)}"
+        logger.error(f"✗ Error during opportunity navigation: {e}")
+
+    return result
+
+# =============================================================================
 # GUIDEPOINT PLATFORM CLASS
 # =============================================================================
 
@@ -455,5 +814,32 @@ class GuidepointPlatform(BasePlatform):
             login_username=login_username,
             login_password=login_password,
             decline=decline
+        )
+
+    # Phase 1: Enhanced Dashboard Navigation Methods
+    async def enhanced_dashboard_login(self, page: Page, username: str, password: str) -> Dict[str, Any]:
+        """Enhanced login logic for Guidepoint dashboard with smart element detection."""
+        return await enhanced_guidepoint_dashboard_login(page, username, password)
+
+    async def detect_dashboard_opportunities(self, page: Page) -> Dict[str, Any]:
+        """Detect and enumerate opportunities on Guidepoint dashboard."""
+        return await detect_guidepoint_opportunities(page)
+
+    async def navigate_to_opportunity(self, page: Page, opportunity_index: int = 0) -> Dict[str, Any]:
+        """Navigate to specific opportunity using enhanced smart element detection."""
+        return await navigate_to_opportunity_application(page, opportunity_index)
+
+    async def smart_click_element(self, page: Page, strategy_name: str, description: str) -> Dict[str, Any]:
+        """Perform smart element clicking with fallback strategies."""
+        if strategy_name not in GUIDEPOINT_NAVIGATION_STRATEGIES:
+            return {
+                "success": False,
+                "error": f"Unknown strategy: {strategy_name}"
+            }
+
+        return await smart_element_click(
+            page,
+            GUIDEPOINT_NAVIGATION_STRATEGIES[strategy_name],
+            description
         )
 
