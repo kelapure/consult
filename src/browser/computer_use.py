@@ -18,12 +18,24 @@ import os
 import re
 import base64
 import asyncio
-from typing import Dict, Any, List, Optional, Tuple, Callable
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple, Callable, cast
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
 from loguru import logger
 
 from anthropic import Anthropic
+from anthropic.types.beta import (
+    BetaCacheControlEphemeralParam,
+    BetaContentBlockParam,
+    BetaImageBlockParam,
+    BetaMessage,
+    BetaMessageParam,
+    BetaTextBlock,
+    BetaTextBlockParam,
+    BetaToolResultBlockParam,
+    BetaToolUseBlockParam,
+)
 
 # Gemini Computer Use API
 from google import genai
@@ -1464,6 +1476,90 @@ class BrowserAutomation:
             logger.error(f"Unknown legacy action: {action_type}")
             return False
 
+    async def _check_task_completion(self, platform_config: Optional[Dict[str, Any]] = None) -> Tuple[bool, bool, List[Dict[str, Any]]]:
+        """
+        Consolidated check for task completion (success, failure, or blocked).
+        
+        Returns:
+            (is_complete, is_success, action_log)
+        """
+        # Check for failure/blocked indicators
+        failure_indicator = await self._check_failure_state()
+        if failure_indicator:
+            logger.error(f"Submission failed - detected: '{failure_indicator}'")
+            await self._capture_page_state()
+            await self.close_browser()
+            return True, False, self.action_log
+
+        blocked_indicator = await self._check_blocked_state()
+        if blocked_indicator:
+            logger.error(f"Project blocked - detected: '{blocked_indicator}'")
+            await self._capture_page_state()
+            await self.close_browser()
+            return True, False, self.action_log
+
+        # Check for success indicators
+        success_indicator = await self._check_success_state()
+        if success_indicator:
+            logger.success(f"Submission success detected: '{success_indicator}'")
+            await self._capture_page_state()
+            await self.close_browser()
+            return True, True, self.action_log
+        
+        # Check workflow stage
+        stage = await self._detect_workflow_stage()
+        if stage == "completion":
+            logger.success("Workflow completion stage detected")
+            await self._capture_page_state()
+            await self.close_browser()
+            return True, True, self.action_log
+
+        # Enhanced platform-aware checks
+        try:
+            # Platform-specific success detection
+            success_patterns = []
+            if platform_config:
+                success_patterns.extend(platform_config.get("success_indicators", []))
+
+            # Fallback to generic success patterns
+            success_patterns.extend([
+                "thanks, you're all set", "application received", "successfully submitted",
+                "submission confirmed", "you're all set", "thank you for applying"
+            ])
+
+            page_text = await self.page.text_content('body') or ""
+            page_text_lower = page_text.lower()
+
+            for pattern in success_patterns:
+                if pattern.lower() in page_text_lower:
+                    logger.success(f"SUCCESS detected via pattern: '{pattern}' - task completed!")
+                    await self._capture_page_state()
+                    await self.close_browser()
+                    return True, True, self.action_log
+
+            # Check for blocked/failure states
+            blocked_patterns = []
+            if platform_config:
+                blocked_patterns.extend(platform_config.get("blocked_indicators", []))
+                blocked_patterns.extend(platform_config.get("failure_indicators", []))
+
+            blocked_patterns.extend([
+                "already declined", "already applied", "project expired",
+                "no longer available", "invitation has expired"
+            ])
+
+            for pattern in blocked_patterns:
+                if pattern.lower() in page_text_lower:
+                    logger.info(f"BLOCKED state detected via pattern: '{pattern}' - stopping appropriately")
+                    await self._capture_page_state()
+                    await self.close_browser()
+                    return True, True, self.action_log  # Graceful exit
+
+        except Exception as e:
+            logger.debug(f"Enhanced success check error (non-fatal): {e}")
+
+        return False, False, self.action_log
+
     async def gemini_computer_use(
         self,
         task: str,
@@ -2180,6 +2276,66 @@ TASK:
             traceback.print_exc()
             return False
 
+    def _inject_prompt_caching(self, messages: List[Dict[str, Any]]):
+        """
+        Set cache breakpoints for the 3 most recent turns.
+        One cache breakpoint is left for tools/system prompt, to be shared across sessions.
+        """
+        breakpoints_remaining = 3
+        for message in reversed(messages):
+            if message["role"] == "user" and isinstance(message["content"], list):
+                if breakpoints_remaining:
+                    breakpoints_remaining -= 1
+                    # Add cache control to the last content block
+                    message["content"][-1]["cache_control"] = {"type": "ephemeral"}
+                else:
+                    # Remove cache control if it exists on older messages (shifting window)
+                    if isinstance(message["content"][-1], dict) and "cache_control" in message["content"][-1]:
+                        del message["content"][-1]["cache_control"]
+                    break
+
+    def _maybe_filter_to_n_most_recent_images(
+        self,
+        messages: List[Dict[str, Any]],
+        images_to_keep: int = 3,
+        min_removal_threshold: int = 3
+    ):
+        """
+        Remove all but the final `images_to_keep` tool_result images in place.
+        Maintains context window health for long sessions.
+        """
+        if images_to_keep is None:
+            return
+
+        tool_result_blocks = [
+            item
+            for message in messages
+            for item in (message["content"] if isinstance(message["content"], list) else [])
+            if isinstance(item, dict) and item.get("type") == "tool_result"
+        ]
+
+        total_images = sum(
+            1
+            for tool_result in tool_result_blocks
+            for content in tool_result.get("content", [])
+            if isinstance(content, dict) and content.get("type") == "image"
+        )
+
+        images_to_remove = total_images - images_to_keep
+        # Reduce cache breaking by removing in chunks
+        images_to_remove -= images_to_remove % min_removal_threshold
+
+        for tool_result in tool_result_blocks:
+            if isinstance(tool_result.get("content"), list):
+                new_content = []
+                for content in tool_result.get("content", []):
+                    if isinstance(content, dict) and content.get("type") == "image":
+                        if images_to_remove > 0:
+                            images_to_remove -= 1
+                            continue
+                    new_content.append(content)
+                tool_result["content"] = new_content
+
     async def claude_computer_use(
         self,
         task: str,
@@ -2201,6 +2357,8 @@ TASK:
         - Mouse control (click, drag, scroll)
         - Keyboard input
         - Enhanced actions: left_mouse_down/up, hold_key, wait, zoom
+        - Prompt Caching (speed/cost optimization)
+        - Image History Truncation (context optimization)
 
         Args:
             task: Description of what to accomplish
@@ -2214,8 +2372,18 @@ TASK:
             logger.error("Claude client not configured. Set ANTHROPIC_API_KEY.")
             return False, []
 
+        # System prompt with cache control
         # Task prompt prefix with verification and UI guidance - optimized for iteration efficiency
-        task_prefix = """CRITICAL EFFICIENCY RULES - READ BEFORE ACTING:
+        system_prompt_text = f"""<SYSTEM_CAPABILITY>
+* You are utilising a virtual browser environment with internet access.
+* To click on an element, you can use the `left_click` action with coordinates.
+* To type text, use the `type` action.
+* To press keys, use the `key` action.
+* The current date is {datetime.today().strftime("%A, %B %-d, %Y")}.
+</SYSTEM_CAPABILITY>
+
+<IMPORTANT>
+CRITICAL EFFICIENCY RULES - READ BEFORE ACTING:
 
 **MANDATORY: Use TAB key for navigation, NOT scrolling**
 - Press Tab to move between form fields (saves 3-5 iterations vs scroll+click)
@@ -2251,11 +2419,19 @@ TASK:
 - Yes buttons typically on LEFT, No/Decline on RIGHT
 - VERIFY coordinates hit correct button - wrong click can decline irreversibly
 - For compliance questions, you almost always want "Yes"
-
-TASK:
+</IMPORTANT>
 """
-        # Combine prefix with user task
-        enhanced_task = task_prefix + task + "\n\n" + verification_prompt
+        
+        system = [
+            {
+                "type": "text", 
+                "text": system_prompt_text,
+                "cache_control": {"type": "ephemeral"} # Cache the system prompt
+            }
+        ]
+
+        # Combine verification prompt with task
+        enhanced_task = task + "\n\n" + verification_prompt
 
         success = False  # Initialize for finally block
         try:
@@ -2295,25 +2471,29 @@ TASK:
             height = viewport.get('height', 768)
 
             # Claude Opus 4.5 ONLY - per documentation
-            # https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool
             model = "claude-opus-4-5"
             tool_type = "computer_20251124"
             beta_header = "computer-use-2025-11-24"
+            prompt_caching_beta = "prompt-caching-2024-07-31"
 
             computer_tool = {
                 "type": tool_type,
                 "name": "computer",
                 "display_width_px": width,
                 "display_height_px": height,
-                "enable_zoom": True,  # Enable zoom action for detailed screen region inspection
+                "enable_zoom": True,
             }
+            # Cache tool definition
+            computer_tool_cached = computer_tool.copy()
+            # Note: Tool caching is not yet fully supported in all SDK versions, skipping for now to be safe
+            
             logger.info(f"Using Claude Opus 4.5 computer use (tool: {tool_type}, beta: {beta_header})")
 
             # Initial screenshot
             initial_screenshot = await self.take_screenshot()
             screenshot_b64 = self.screenshot_to_base64(initial_screenshot)
 
-            # Initialize messages with enhanced task (includes verification guidance)
+            # Initialize messages
             messages = [
                 {
                     "role": "user",
@@ -2331,6 +2511,10 @@ TASK:
                 }
             ]
 
+            # Configurable budgets
+            thinking_budget = int(os.getenv("CLAUDE_THINKING_BUDGET", "2048"))
+            images_to_keep = int(os.getenv("CLAUDE_IMAGES_TO_KEEP", "5"))
+
             # Agent loop
             for iteration in range(max_iterations):
                 logger.info(f"Claude iteration {iteration + 1}/{max_iterations}")
@@ -2343,16 +2527,21 @@ TASK:
                     await self.close_browser()
                     return False, self.action_log
 
-                # Build API call parameters - Claude Opus 4.5 with thinking enabled
+                # Apply prompt caching optimizations
+                self._inject_prompt_caching(messages)
+                self._maybe_filter_to_n_most_recent_images(messages, images_to_keep=images_to_keep)
+
+                # Build API call parameters
                 api_params = {
                     "model": model,
                     "max_tokens": 4096,
+                    "system": system,
                     "tools": [computer_tool],
                     "messages": messages,
-                    "betas": [beta_header],
+                    "betas": [beta_header, prompt_caching_beta],
                     "thinking": {
                         "type": "enabled",
-                        "budget_tokens": 2048
+                        "budget_tokens": thinking_budget
                     }
                 }
 
@@ -2369,16 +2558,12 @@ TASK:
                 has_tool_use = False
 
                 for block in response.content:
-                    # Handle thinking blocks (new in computer_20251124)
+                    # Handle thinking blocks
                     if block.type == "thinking":
                         thinking_text = getattr(block, 'thinking', '') or ''
                         if thinking_text:
-                            # Log thinking for debugging and visibility
                             logger.debug(f"Claude thinking: {thinking_text[:500]}...")
-                            self.action_log.append({
-                                "action": "thinking",
-                                "content": thinking_text[:1000]  # Truncate for log storage
-                            })
+                            # Don't add to action log to keep it clean, but useful for debugging
 
                     elif block.type == "tool_use":
                         has_tool_use = True
@@ -2390,11 +2575,16 @@ TASK:
                         # Execute action via Playwright
                         result = await self.execute_claude_action(action, block.input)
                         
-                        # Handle result depending on whether it's boolean or data
+                        # Handle result formatting
                         success_val = True
                         output_text = None
+                        is_error = False
+                        
                         if isinstance(result, bool):
                             success_val = result
+                            if not success_val:
+                                is_error = True
+                                output_text = f"Action {action} failed"
                         elif isinstance(result, str):
                             output_text = result
                             success_val = True
@@ -2403,11 +2593,16 @@ TASK:
                         new_screenshot = await self.take_screenshot()
                         new_screenshot_b64 = self.screenshot_to_base64(new_screenshot)
 
-                        # Build tool result with screenshot
+                        # Build tool result content
                         tool_result_content = []
+                        
+                        # Add system output/error if present
                         if output_text:
-                             tool_result_content.append({"type": "text", "text": output_text})
+                            if is_error:
+                                output_text = f"Error: {output_text}"
+                            tool_result_content.append({"type": "text", "text": output_text})
                              
+                        # Always append screenshot for computer tool
                         tool_result_content.append({
                             "type": "image",
                             "source": {
@@ -2420,7 +2615,8 @@ TASK:
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": tool_result_content
+                            "content": tool_result_content,
+                            "is_error": is_error
                         })
 
                         # Brief pause between actions
@@ -2431,7 +2627,12 @@ TASK:
 
                 # If no tool use, model is done
                 if not has_tool_use:
-                    logger.success("Task completed - no more tool use")
+                    logger.info("Claude stopped making actions - checking task completion")
+                    is_complete, is_success, _ = await self._check_task_completion(platform_config)
+                    if is_complete:
+                        return is_success, self.action_log
+                    
+                    logger.success("Task completed (no tool use)")
                     await self._capture_page_state()
                     await self.close_browser()
                     return True, self.action_log
@@ -2443,52 +2644,10 @@ TASK:
                         "content": tool_results
                     })
 
-                # Enhanced intelligent success detection (platform-aware, agentic)
-                try:
-                    # Platform-specific success detection
-                    success_patterns = []
-                    if platform_config:
-                        # Use platform-specific success indicators
-                        success_patterns.extend(platform_config.get("success_indicators", []))
-
-                    # Fallback to generic success patterns
-                    success_patterns.extend([
-                        "thanks, you're all set", "application received", "successfully submitted",
-                        "submission confirmed", "you're all set", "thank you for applying"
-                    ])
-
-                    # Check for success patterns in page text (intelligent detection)
-                    page_text = await self.page.text_content('body') or ""
-                    page_text_lower = page_text.lower()
-
-                    for pattern in success_patterns:
-                        if pattern.lower() in page_text_lower:
-                            logger.success(f"SUCCESS detected via pattern: '{pattern}' - task completed!")
-                            await self._capture_page_state()
-                            await self.close_browser()
-                            return True, self.action_log
-
-                    # Check for blocked/failure states (intelligent early termination)
-                    blocked_patterns = []
-                    if platform_config:
-                        blocked_patterns.extend(platform_config.get("blocked_indicators", []))
-                        blocked_patterns.extend(platform_config.get("failure_indicators", []))
-
-                    # Default blocked patterns
-                    blocked_patterns.extend([
-                        "already declined", "already applied", "project expired",
-                        "no longer available", "invitation has expired"
-                    ])
-
-                    for pattern in blocked_patterns:
-                        if pattern.lower() in page_text_lower:
-                            logger.info(f"BLOCKED state detected via pattern: '{pattern}' - stopping appropriately")
-                            await self._capture_page_state()
-                            await self.close_browser()
-                            return True, self.action_log  # Return True since we correctly detected blocked state
-
-                except Exception as e:
-                    logger.debug(f"Enhanced success check error (non-fatal): {e}")
+                # Check task completion after each iteration
+                is_complete, is_success, _ = await self._check_task_completion(platform_config)
+                if is_complete:
+                    return is_success, self.action_log
 
             logger.warning(f"Max iterations ({max_iterations}) reached")
             await self._capture_page_state()
